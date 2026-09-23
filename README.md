@@ -5,7 +5,7 @@ Project `lingga` adalah migrasi bertahap dari project Google Apps Script lama ya
 Arsitektur migrasi saat ini:
 
 - Next.js menangani UI, Firebase Authentication, Firestore, dashboard berdasarkan role, form Enumerator, dan workflow QC.
-- Firestore collection `user` menyimpan profil publik: `username`, `email`, `nama`, dan `role`.
+- Firestore collection `user` menyimpan profil publik: `username`, `email`, `name`, dan `role`.
 - Firestore collection `submissions` menyimpan data pendataan dan hasil QC.
 - Folder lokal [gas](gas) hanya berisi Apps Script penyimpanan dokumen ke Google Drive. Jangan menambahkan login, KoboToolbox, Spreadsheet, QC, atau dashboard ke service tersebut.
 - File lama Apps Script dipertahankan sebagai referensi migrasi, bukan sebagai backend aktif Next.js.
@@ -76,7 +76,7 @@ Penting: ubah ID dokumen profil menjadi UID dari Firebase Authentication. Ini wa
 user/{uid-firebase}
 ```
 
-Jika profil lama masih memakai ID acak, buat dokumen baru dengan ID UID Firebase yang sama dan salin field `username`, `email`, `nama`, serta `role`. Untuk role reviewer gunakan nilai persis `admin`, `koordinator`, atau `data analis`.
+Jika profil lama masih memakai ID acak, buat dokumen baru dengan ID UID Firebase yang sama dan salin field `username`, `email`, `name`, serta `role`. Untuk role reviewer gunakan nilai persis `admin`, `koordinator`, atau `data analis`.
 
 Jangan simpan field `sandi` atau password di Firestore. Password hanya disimpan oleh Firebase Authentication.
 
@@ -144,4 +144,4 @@ service cloud.firestore {
 }
 ```
 
-Rules di atas membuat profil `user` dapat dibaca sebelum login karena login memakai username. Pastikan dokumen user hanya berisi data profil publik seperti `username`, `email`, `nama`, dan `role`.
+Rules di atas membuat profil `user` dapat dibaca sebelum login karena login memakai username. Pastikan dokumen user hanya berisi data profil publik seperti `username`, `email`, `name`, dan `role`.

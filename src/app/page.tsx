@@ -44,9 +44,16 @@ type UserProfile = {
   id?: string;
   email?: string;
   username?: string;
+  name?: string;
   nama?: string;
   role?: string;
 };
+
+function normalizeUserProfile(id: string, data: Record<string, unknown>) {
+  const profile = { id, ...data } as UserProfile;
+  const name = profile.name?.trim() || "Nama belum diatur";
+  return { ...profile, name, nama: name };
+}
 
 const statusClass: Record<Hotspot["status"], string> = { Aktif: "status-good", Baru: "status-new", "Tidak aktif": "status-off" };
 const qcClass: Record<Hotspot["qc"], string> = { Valid: "qc-valid", Pending: "qc-pending", "Perlu perbaikan": "qc-repair" };
@@ -98,12 +105,12 @@ export default function Home() {
       if (user && db) {
         const profileSnapshot = await getDoc(doc(db, "user", user.uid));
         if (profileSnapshot.exists()) {
-          setUserProfile({ id: profileSnapshot.id, ...profileSnapshot.data() } as UserProfile);
+          setUserProfile(normalizeUserProfile(profileSnapshot.id, profileSnapshot.data()));
         } else if (user.email) {
           const profileQuery = query(collection(db, "user"), where("email", "==", user.email), limit(1));
           const profileByEmail = await getDocs(profileQuery);
           const profile = profileByEmail.docs[0];
-          setUserProfile(profile ? { id: profile.id, ...profile.data() } as UserProfile : null);
+          setUserProfile(profile ? normalizeUserProfile(profile.id, profile.data()) : null);
         } else {
           setUserProfile(null);
         }
@@ -117,17 +124,22 @@ export default function Home() {
   useEffect(() => {
     if (!db || !authUser || !userProfile) return;
     let cancelled = false;
+    const firestore = db;
     const role = (userProfile.role || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const isEnumerator = role === "enumerator";
     const submissionsQuery = isEnumerator
-      ? query(collection(db, "submissions"), where("enumeratorUid", "==", authUser.uid))
-      : collection(db, "submissions");
+      ? query(collection(firestore, "submissions"), where("enumeratorUid", "==", authUser.uid))
+      : collection(firestore, "submissions");
     getDocs(submissionsQuery)
-      .then((snapshot) => {
+      .then(async (snapshot) => {
         if (cancelled) return;
-        const rows = snapshot.docs
-          .map((item) => {
+        const rows = (await Promise.all(snapshot.docs.map(async (item) => {
             const data = item.data();
+            const enumeratorUid = String(data.enumeratorUid || "");
+            const profileSnapshot = enumeratorUid ? await getDoc(doc(firestore, "user", enumeratorUid)) : null;
+            const profileName = profileSnapshot?.exists() ? String(profileSnapshot.data().name || "").trim() : "";
+            const storedName = String(data.enumeratorName || "").trim();
+            const enumeratorName = profileName || (storedName && !storedName.includes("@") ? storedName : "Nama belum diatur");
             const status = String(data.statusHotspot || "").toLowerCase();
             const qc = String(data.qcStatus || "pending").toLowerCase();
             const population = Array.isArray(data.populasiKunci) ? data.populasiKunci.join(", ") : String(data.populasiKunci || "-");
@@ -142,7 +154,7 @@ export default function Home() {
               coordinates: String(data.koordinat || ""),
               hivPositive: Number(data.jumlahHivPositif || 0),
               hivTests: Number(data.jumlahTesHiv || 0),
-              enumeratorName: String(data.enumeratorName || ""),
+              enumeratorName,
               enumeratorUsername: String(data.enumeratorUsername || ""),
               organisasi: String(data.organisasi || ""),
               address: String(data.alamat || ""),
@@ -162,9 +174,9 @@ export default function Home() {
               qcNote: String(data.qcNote || ""),
               qcInspector: String(data.qcNamaPemeriksa || ""),
               qcDate: String(data.qcTanggalPemeriksaan || ""),
-              enumeratorUid: String(data.enumeratorUid || ""),
+              enumeratorUid,
             } as Hotspot & { enumeratorUid: string };
-          })
+          })))
           .sort((first, second) => second.date.localeCompare(first.date));
         setHotspotRows(rows);
       })
@@ -235,14 +247,14 @@ export default function Home() {
       await updateDoc(doc(db, "user", editingUser.id), {
         username: String(formData.get("username") || "").trim(),
         email: String(formData.get("email") || "").trim(),
-        nama: String(formData.get("nama") || "").trim(),
+        name: String(formData.get("name") || formData.get("nama") || "").trim(),
         role: String(formData.get("role") || "enumerator").trim(),
       });
       setManagedUsers((users) => users.map((user) => user.id === editingUser.id ? {
         ...user,
         username: String(formData.get("username") || "").trim(),
         email: String(formData.get("email") || "").trim(),
-        nama: String(formData.get("nama") || "").trim(),
+        name: String(formData.get("name") || formData.get("nama") || "").trim(),
         role: String(formData.get("role") || "enumerator").trim(),
       } : user));
       setEditingUser(null);
@@ -267,7 +279,8 @@ export default function Home() {
   }
 
   return (
-    <div className={`dashboard-page ${isReviewer ? "can-review" : "read-only"}`}>
+    <div className={`dashboard-page ${isReviewer ? "can-review" : "read-only"} ${isEnumerator ? "enumerator-dashboard" : "reviewer-dashboard"}`}>
+      {dataLoading && authUser && userProfile && <DashboardLoading />}
       <nav className="topbar"><div className="brand"><span className="brand-mark">+</span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{userProfile?.role || "Firebase User"}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="button button-ghost" onClick={() => setLastUpdated("sekarang")}>↻ <span>Refresh Data</span></button><button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
       <main className="dashboard-content">
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Monitoring &amp; Quality Control"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Data tersinkronisasi <strong>{lastUpdated}</strong></div></section>
@@ -288,6 +301,7 @@ export default function Home() {
 }
 
 function Kpi({ tone, label, value, suffix, note, icon }: { tone: string; label: string; value: string; suffix?: string; note: string; icon: string }) { return <article className={`kpi-card kpi-${tone}`}><div className="kpi-top"><span className="kpi-icon">{icon}</span><span className="kpi-arrow">↗</span></div><small>{label}</small><strong>{value}{suffix && <em>{suffix}</em>}</strong><span className="kpi-note">{note}</span></article>; }
+function DashboardLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Data intelligence platform</p><h2>Menyiapkan dashboard</h2><p>Mengambil data terbaru dari Firestore...</p><div className="dashboard-loading-track" /></div></div>; }
 function PanelHeading({ icon, title, subtitle, tag }: { icon: string; title: string; subtitle: string; tag?: string }) { return <div className="panel-heading"><div><h2><span className="heading-icon">{icon}</span>{title}</h2><p>{subtitle}</p></div>{tag && <span className="panel-tag">{tag}</span>}</div>; }
 function Legend({ color, label, value }: { color: string; label: string; value: string }) { return <div className="legend-row"><span className={`legend-dot ${color}`} />{label}<strong>{value}</strong></div>; }
 function Risk({ label, value, tone }: { label: string; value: string; tone: string }) { return <div className={`risk-item risk-${tone}`}><small>{label}</small><strong>{value}</strong></div>; }
@@ -426,7 +440,7 @@ const supervisionQualityChecks = [
 function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }: { open: boolean; user: User; profile: UserProfile | null; rows: Hotspot[]; onOpen: () => void; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const enumerators = Array.from(new Set(rows.map((row) => row.enumeratorName || row.enumeratorUsername).filter(Boolean)));
+  const enumerators = Array.from(new Set(rows.map((row) => row.enumeratorName).filter(Boolean)));
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
