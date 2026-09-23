@@ -10,7 +10,7 @@ Arsitektur migrasi saat ini:
 - Folder lokal [gas](gas) hanya berisi Apps Script penyimpanan dokumen ke Google Drive. Jangan menambahkan login, KoboToolbox, Spreadsheet, QC, atau dashboard ke service tersebut.
 - File lama Apps Script dipertahankan sebagai referensi migrasi, bukan sebagai backend aktif Next.js.
 
-Catatan untuk agen AI: sebelum mengubah fitur yang sudah dimigrasikan, bandingkan implementasinya dengan project lama agar nama field dan aturan role tetap konsisten. Enumerator hanya menginput dan membaca data miliknya; Koordinator/Data Analis/Admin melakukan QC; Admin mengelola profil user.
+Catatan untuk agen AI: sebelum mengubah fitur yang sudah dimigrasikan, bandingkan implementasinya dengan project lama agar nama field dan aturan role tetap konsisten. Enumerator hanya menginput dan membaca data miliknya; Supervisor memeriksa pelaksanaan lapangan; Koordinator melakukan review; Data Analis memvalidasi dan memfinalkan data; Admin mengelola profil user.
 
 ## Konfigurasi upload
 
@@ -27,9 +27,12 @@ Struktur minimal dokumen `submissions`:
 
 ```text
 enumeratorUid, enumeratorUsername, enumeratorName
-organisasi, namaHotspot, kecamatan, kelurahan, alamat, koordinat
-statusHotspot, populasiKunci, catatan, document, qcStatus, createdAt
+kodeHotspot, organisasi, namaHotspot, kecamatan, kelurahan, alamat, koordinat
+statusHotspot, statusVerifikasi, populasiKunci, tipeLokasi, subTipeLokasi
+catatan, document, qcStatus, workflowStage, createdAt
 ```
+
+Tahapan `workflowStage` submission: `submitted`, `supervisor_review`, `coordinator_review`, `analyst_review`, `finalized`, atau `needs_revision`. Data supervisi memakai `supervisor_review` dan `workflowStatus: submitted` saat pertama disimpan.
 
 ## Getting Started
 
@@ -68,7 +71,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Firestore Rules
 
-Salin rules berikut ke Firebase Console → Firestore Database → Rules → Publish.
+Publish file [firestore.rules](firestore.rules) ke Firebase Console → Firestore Database → Rules. Rules tersebut memvalidasi field wajib, angka, status, role, dan transisi workflow di server.
 
 Penting: ubah ID dokumen profil menjadi UID dari Firebase Authentication. Ini wajib untuk membaca role dari Firestore Rules:
 
@@ -145,3 +148,5 @@ service cloud.firestore {
 ```
 
 Rules di atas membuat profil `user` dapat dibaca sebelum login karena login memakai username. Pastikan dokumen user hanya berisi data profil publik seperti `username`, `email`, `name`, dan `role`.
+
+Setelah mengubah [gas/code.gs](gas/code.gs), deploy ulang Apps Script Web App. Upload dokumen sekarang membutuhkan `idempotencyKey` dan akan mengembalikan file Drive yang sama saat request diulang.

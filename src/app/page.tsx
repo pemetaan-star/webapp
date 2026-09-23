@@ -1,11 +1,15 @@
 "use client";
 
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, query, updateDoc, where } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import type { Map as LeafletMap } from "leaflet";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
+import { Kpi, PanelHeading, Risk } from "@/app/components/dashboard";
+import { EnumeratorFormFields } from "@/app/components/enumerator-form";
+import { DashboardOverview } from "@/app/components/dashboard-overview";
+import { ReviewDetailModal, ReviewQcModal } from "@/app/components/review-modals";
 
 type Hotspot = {
   id: string;
@@ -13,8 +17,12 @@ type Hotspot = {
   name: string;
   area: string;
   population: string;
-  status: "Aktif" | "Baru" | "Tidak aktif";
+  status: "Aktif" | "Baru" | "Tidak aktif" | "Perlu verifikasi";
   qc: "Valid" | "Pending" | "Perlu perbaikan";
+  workflowStage: "submitted" | "supervisor_review" | "coordinator_review" | "analyst_review" | "finalized" | "needs_revision";
+  workflowHistory?: Array<{ stage: Hotspot["workflowStage"]; role: string; uid: string; at: string; note?: string }>;
+  hotspotCode?: string;
+  verificationStatus?: string;
   coordinates?: string;
   hivPositive?: number;
   hivTests?: number;
@@ -40,6 +48,8 @@ type Hotspot = {
   qcDate?: string;
 };
 
+type SubmissionCursor = QueryDocumentSnapshot<DocumentData> | null;
+
 type UserProfile = {
   id?: string;
   email?: string;
@@ -55,8 +65,80 @@ function normalizeUserProfile(id: string, data: Record<string, unknown>) {
   return { ...profile, name, nama: name };
 }
 
-const statusClass: Record<Hotspot["status"], string> = { Aktif: "status-good", Baru: "status-new", "Tidak aktif": "status-off" };
+function normalizeRole(role?: string) {
+  return (role || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const statusClass: Record<Hotspot["status"], string> = { Aktif: "status-good", Baru: "status-new", "Tidak aktif": "status-off", "Perlu verifikasi": "status-off" };
 const qcClass: Record<Hotspot["qc"], string> = { Valid: "qc-valid", Pending: "qc-pending", "Perlu perbaikan": "qc-repair" };
+const workflowStageLabels: Record<Hotspot["workflowStage"], string> = {
+  submitted: "Terkirim",
+  supervisor_review: "Review Supervisor",
+  coordinator_review: "Review Koordinator",
+  analyst_review: "Review Data Analis",
+  finalized: "Final",
+  needs_revision: "Perlu perbaikan",
+};
+const locationSubtypes: Record<string, Array<[string, string]>> = {
+  ruang_publik: [["jalanan_mangkal", "Jalanan / Titik Mangkal"], ["taman_kota", "Taman Kota / Alun-Alun / Halaman"], ["stasiun_terminal", "Stasiun / Terminal / Halte"], ["bangunan_kosong", "Bangunan Kosong / Mangkrak"], ["ruang_publik_lainnya", "Lainnya"]],
+  tempat_makan_hiburan: [["warung_makan", "Warung Kopi / Warung Makan"], ["kafe_restoran", "Kafe / Restoran"], ["bar_club", "Bar / Club / Diskotik"], ["karaoke", "Karaoke (Hall / Room)"], ["tempat_makan_lainnya", "Lainnya"]],
+  akomodasi_private: [["kos_apartemen", "Kos / Apartemen"], ["rumah_tinggal", "Rumah Tinggal / Kontrakan"], ["penginapan_hotel", "Penginapan / Hotel / Losmen"], ["akomodasi_lainnya", "Lainnya"]],
+  perawatan_kebugaran: [["salon", "Salon"], ["spa_gym", "Spa / Sauna / Gym"], ["panti_pijat", "Panti Pijat"], ["perawatan_lainnya", "Lainnya"]],
+  platform_virtual: [["aplikasi_kencan", "Aplikasi Kencan"], ["media_sosial", "Media Sosial & Grup Chat"], ["virtual_lainnya", "Lainnya"]],
+  lainnya: [["lainnya", "Lainnya"]],
+};
+
+async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<DocumentData>[] }, firestore: NonNullable<typeof db>) {
+  return Promise.all(snapshot.docs.map(async (item) => {
+    const data = item.data();
+    const enumeratorUid = String(data.enumeratorUid || "");
+    const storedName = String(data.enumeratorName || "").trim();
+    const profileSnapshot = !storedName && enumeratorUid ? await getDoc(doc(firestore, "user", enumeratorUid)) : null;
+    const profileName = profileSnapshot?.exists() ? String(profileSnapshot.data().name || profileSnapshot.data().nama || "").trim() : "";
+    const enumeratorName = profileName || (storedName && !storedName.includes("@") ? storedName : "Nama belum diatur");
+    const status = String(data.statusHotspot || "").toLowerCase();
+    const qc = String(data.qcStatus || "pending").toLowerCase();
+    const workflowStage = String(data.workflowStage || "submitted") as Hotspot["workflowStage"];
+    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(String(data.createdAt || ""));
+    return {
+      id: item.id,
+      date: Number.isNaN(createdAt.getTime()) ? "-" : createdAt.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
+      name: String(data.namaHotspot || "Tanpa nama"),
+      area: `${String(data.kecamatan || "-")} / ${String(data.kelurahan || "-")}`,
+      population: Array.isArray(data.populasiKunci) ? data.populasiKunci.join(", ") : String(data.populasiKunci || "-"),
+      status: status === "baru" ? "Baru" : status === "tidak_aktif" ? "Tidak aktif" : status === "perlu_verifikasi" || status === "perlu_klarifikasi" ? "Perlu verifikasi" : "Aktif",
+      qc: qc === "valid" ? "Valid" : qc === "perlu_perbaikan" ? "Perlu perbaikan" : "Pending",
+      workflowStage: workflowStageLabels[workflowStage] ? workflowStage : "submitted",
+      workflowHistory: Array.isArray(data.workflowHistory) ? data.workflowHistory : [],
+      hotspotCode: String(data.kodeHotspot || ""),
+      verificationStatus: String(data.statusVerifikasi || ""),
+      coordinates: String(data.koordinat || ""),
+      hivPositive: Number(data.jumlahHivPositif || 0),
+      hivTests: Number(data.jumlahTesHiv || 0),
+      enumeratorName,
+      enumeratorUsername: String(data.enumeratorUsername || ""),
+      enumeratorUid,
+      organisasi: String(data.organisasi || ""),
+      address: String(data.alamat || ""),
+      locationType: String(data.tipeLokasi || ""),
+      locationSubtype: String(data.subTipeLokasi || ""),
+      activityTime: Array.isArray(data.waktuAktivitas) ? data.waktuAktivitas.join(", ") : String(data.waktuAktivitas || ""),
+      populationEstimate: Number(data.estimasiJumlahPopulasi || 0),
+      educated: Number(data.jumlahDiedukasi || 0),
+      notes: String(data.catatan || ""),
+      informationSource: String(data.sumberInformasi || ""),
+      informantPhone: String(data.noHpInforman || ""),
+      activityDescription: String(data.keteranganAktivitas || ""),
+      mappingCondition: String(data.kondisiSaatPemetaan || ""),
+      documentName: String(data.document?.name || ""),
+      documentFileId: String(data.document?.fileId || ""),
+      documentUrl: String(data.document?.url || ""),
+      qcNote: String(data.qcNote || ""),
+      qcInspector: String(data.qcNamaPemeriksa || ""),
+      qcDate: String(data.qcTanggalPemeriksaan || ""),
+    } as Hotspot & { enumeratorUid: string };
+  }));
+}
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -70,6 +152,8 @@ export default function Home() {
   const [hotspotRows, setHotspotRows] = useState<Hotspot[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState("");
+  const [submissionCursor, setSubmissionCursor] = useState<SubmissionCursor>(null);
+  const [loadingMoreSubmissions, setLoadingMoreSubmissions] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [managedUsers, setManagedUsers] = useState<UserProfile[]>([]);
   const [userManagementLoading, setUserManagementLoading] = useState(false);
@@ -79,6 +163,7 @@ export default function Home() {
   const [showSupervisionForm, setShowSupervisionForm] = useState(false);
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
   const [showQcModal, setShowQcModal] = useState(false);
+  const qcUploadKeys = useRef<Record<string, string>>({});
   const filteredHotspots = useMemo(() => hotspotRows.filter((hotspot) => {
     const matchesQuery = Object.values(hotspot).join(" ").toLowerCase().includes(searchQuery.toLowerCase());
     return matchesQuery && (filter === "Semua" || hotspot.qc === filter);
@@ -88,10 +173,13 @@ export default function Home() {
   const pendingQc = hotspotRows.filter((item) => item.qc !== "Valid").length;
   const hivPositive = hotspotRows.reduce((total, item) => total + (item.hivPositive || 0), 0);
   const hivTests = hotspotRows.reduce((total, item) => total + (item.hivTests || 0), 0);
-  const roleKey = (userProfile?.role || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const roleKey = normalizeRole(userProfile?.role);
   const isEnumerator = roleKey === "enumerator";
-  const isReviewer = roleKey.includes("dataanalis") || roleKey.includes("dataanalyst") || roleKey.includes("koordinator") || roleKey.includes("kordinator") || roleKey === "admin";
-  const canSupervise = !isEnumerator && (isReviewer || roleKey.includes("supervisor") || roleKey.includes("supervisi") || roleKey.includes("koor"));
+  const isSupervisor = roleKey.includes("supervisor") || roleKey.includes("supervisi");
+  const isCoordinator = roleKey.includes("koordinator") || roleKey.includes("kordinator") || roleKey.includes("koor");
+  const isAnalyst = roleKey.includes("dataanalis") || roleKey.includes("dataanalyst");
+  const isReviewer = isCoordinator || isAnalyst || roleKey === "admin";
+  const canSupervise = !isEnumerator && (isReviewer || isSupervisor);
   const roleTitle = isEnumerator ? "Dashboard Enumerator" : isReviewer ? "Dashboard Koordinator & Data Analis" : roleKey.includes("super") ? "Dashboard Supervisor" : "Dashboard Pendataan Hotspot";
   const roleSubtitle = isEnumerator ? "Kelola input dan pantau data hotspot yang Anda kirim." : "Ringkasan data survei lapangan dan status validasi kualitas secara real-time.";
 
@@ -123,76 +211,58 @@ export default function Home() {
 
   useEffect(() => {
     if (!db || !authUser || !userProfile) return;
-    let cancelled = false;
     const firestore = db;
-    const role = (userProfile.role || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const isEnumerator = role === "enumerator";
-    const submissionsQuery = isEnumerator
-      ? query(collection(firestore, "submissions"), where("enumeratorUid", "==", authUser.uid))
-      : collection(firestore, "submissions");
-    getDocs(submissionsQuery)
-      .then(async (snapshot) => {
-        if (cancelled) return;
-        const rows = (await Promise.all(snapshot.docs.map(async (item) => {
-            const data = item.data();
-            const enumeratorUid = String(data.enumeratorUid || "");
-            const profileSnapshot = enumeratorUid ? await getDoc(doc(firestore, "user", enumeratorUid)) : null;
-            const profileName = profileSnapshot?.exists() ? String(profileSnapshot.data().name || "").trim() : "";
-            const storedName = String(data.enumeratorName || "").trim();
-            const enumeratorName = profileName || (storedName && !storedName.includes("@") ? storedName : "Nama belum diatur");
-            const status = String(data.statusHotspot || "").toLowerCase();
-            const qc = String(data.qcStatus || "pending").toLowerCase();
-            const population = Array.isArray(data.populasiKunci) ? data.populasiKunci.join(", ") : String(data.populasiKunci || "-");
-            return {
-              id: item.id,
-              date: data.createdAt ? new Date(data.createdAt).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-",
-              name: String(data.namaHotspot || "Tanpa nama"),
-              area: `${String(data.kecamatan || "-")} / ${String(data.kelurahan || "-")}`,
-              population,
-              status: status === "baru" ? "Baru" : status === "tidak_aktif" ? "Tidak aktif" : "Aktif",
-              qc: qc === "valid" ? "Valid" : qc === "perlu_perbaikan" ? "Perlu perbaikan" : "Pending",
-              coordinates: String(data.koordinat || ""),
-              hivPositive: Number(data.jumlahHivPositif || 0),
-              hivTests: Number(data.jumlahTesHiv || 0),
-              enumeratorName,
-              enumeratorUsername: String(data.enumeratorUsername || ""),
-              organisasi: String(data.organisasi || ""),
-              address: String(data.alamat || ""),
-              locationType: String(data.tipeLokasi || ""),
-              locationSubtype: String(data.subTipeLokasi || ""),
-              activityTime: Array.isArray(data.waktuAktivitas) ? data.waktuAktivitas.join(", ") : String(data.waktuAktivitas || ""),
-              populationEstimate: Number(data.estimasiJumlahPopulasi || 0),
-              educated: Number(data.jumlahDiedukasi || 0),
-              notes: String(data.catatan || ""),
-              informationSource: String(data.sumberInformasi || ""),
-              informantPhone: String(data.noHpInforman || ""),
-              activityDescription: String(data.keteranganAktivitas || ""),
-              mappingCondition: String(data.kondisiSaatPemetaan || ""),
-              documentName: String(data.document?.name || ""),
-              documentFileId: String(data.document?.fileId || ""),
-              documentUrl: String(data.document?.url || ""),
-              qcNote: String(data.qcNote || ""),
-              qcInspector: String(data.qcNamaPemeriksa || ""),
-              qcDate: String(data.qcTanggalPemeriksaan || ""),
-              enumeratorUid,
-            } as Hotspot & { enumeratorUid: string };
-          })))
-          .sort((first, second) => second.date.localeCompare(first.date));
+    const submissionsQuery = (isEnumerator ? query(collection(firestore, "submissions"), where("enumeratorUid", "==", authUser.uid), orderBy("createdAt", "desc"), limit(25)) : query(collection(firestore, "submissions"), orderBy("createdAt", "desc"), limit(25)));
+    const unsubscribe = onSnapshot(submissionsQuery, async (snapshot) => {
+      try {
+        const rows = await mapSubmissionSnapshot(snapshot, firestore);
         setHotspotRows(rows);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          const code = error instanceof Error && "code" in error ? String(error.code) : "";
-          setDataError(code === "permission-denied"
-            ? "Akses ditolak. Pastikan profil user tersimpan di user/{UID Firebase} dan role berisi koordinator/data analis/admin."
-            : "Data Firestore tidak dapat dimuat. Periksa Firestore Rules dan collection submissions.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setDataLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [authUser, userProfile]);
+        setSubmissionCursor(snapshot.docs.at(-1) || null);
+      } catch {
+        setDataError("Data Firestore tidak dapat dipetakan ke format dashboard.");
+      } finally {
+        setDataLoading(false);
+      }
+    }, (error) => {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      setDataError(code === "permission-denied"
+        ? "Akses ditolak. Pastikan profil user tersimpan di user/{UID Firebase} dan role berisi koordinator/data analis/admin."
+        : "Data Firestore tidak dapat dimuat. Periksa Rules dan indeks submissions.");
+      setDataLoading(false);
+    });
+    return unsubscribe;
+  }, [authUser, isEnumerator, userProfile]);
+
+  const loadMoreSubmissions = useCallback(async () => {
+    if (!db || !authUser || !userProfile || !submissionCursor || loadingMoreSubmissions) return;
+    setLoadingMoreSubmissions(true);
+    try {
+      const role = normalizeRole(userProfile.role);
+      const nextQuery = role === "enumerator"
+        ? query(collection(db, "submissions"), where("enumeratorUid", "==", authUser.uid), orderBy("createdAt", "desc"), startAfter(submissionCursor), limit(25))
+        : query(collection(db, "submissions"), orderBy("createdAt", "desc"), startAfter(submissionCursor), limit(25));
+      const snapshot = await getDocs(nextQuery);
+      const rows = await mapSubmissionSnapshot(snapshot, db);
+      setHotspotRows((current) => [...current, ...rows]);
+      setSubmissionCursor(snapshot.docs.at(-1) || submissionCursor);
+    } catch {
+      setDataError("Halaman data berikutnya tidak dapat dimuat.");
+    } finally {
+      setLoadingMoreSubmissions(false);
+    }
+  }, [authUser, loadingMoreSubmissions, submissionCursor, userProfile]);
+
+  useEffect(() => {
+    const handleLoadMore = () => { void loadMoreSubmissions(); };
+    window.addEventListener("load-more-submissions", handleLoadMore);
+    return () => window.removeEventListener("load-more-submissions", handleLoadMore);
+  }, [loadMoreSubmissions]);
+
+  useEffect(() => {
+    document.querySelectorAll<HTMLElement>(".role-action-count").forEach((element) => {
+      element.textContent = String(pendingQc);
+    });
+  }, [pendingQc]);
 
   async function handleLogout() {
     if (auth) await signOut(auth);
@@ -202,11 +272,18 @@ export default function Home() {
     if (!db || !selectedHotspot || !isReviewer) return;
     let approvalDocument: { name: string; fileId: string; url: string } | null = null;
     if (payload.document?.size) {
-      const response = await fetch("/api/documents/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileData: await toBase64(payload.document), fileName: payload.document.name, fileMime: payload.document.type || "application/octet-stream", folderName: "Persetujuan QC" }) });
+      const idempotencyKey = qcUploadKeys.current[selectedHotspot.id] || crypto.randomUUID();
+      qcUploadKeys.current[selectedHotspot.id] = idempotencyKey;
+      const response = await fetch("/api/documents/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileData: await toBase64(payload.document), fileName: payload.document.name, fileMime: payload.document.type || "application/octet-stream", folderName: "Persetujuan QC", idempotencyKey }) });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || "Dokumen persetujuan gagal diunggah.");
       approvalDocument = { name: result.fileName, fileId: result.fileId, url: result.fileUrl };
     }
+    const workflowStage: Hotspot["workflowStage"] = payload.status === "Perlu perbaikan"
+      ? "needs_revision"
+      : payload.status === "Valid"
+        ? (isAnalyst || roleKey === "admin" ? "finalized" : "analyst_review")
+        : (isCoordinator ? "coordinator_review" : "analyst_review");
     await updateDoc(doc(db, "submissions", selectedHotspot.id), {
       qcStatus: payload.status === "Valid" ? "valid" : payload.status === "Perlu perbaikan" ? "perlu_perbaikan" : "pending",
       qcKelengkapan: payload.kelengkapan,
@@ -218,6 +295,9 @@ export default function Home() {
       ...(approvalDocument ? { qcDokumenPersetujuan: approvalDocument } : {}),
       qcReviewerUid: authUser?.uid || "",
       qcReviewedAt: new Date().toISOString(),
+      workflowStage,
+      workflowUpdatedByRole: userProfile?.role || "",
+      workflowHistory: arrayUnion({ stage: workflowStage, role: userProfile?.role || "", uid: authUser?.uid || "", at: new Date().toISOString(), note: payload.note }),
     });
     setHotspotRows((rows) => rows.map((row) => row.id === selectedHotspot.id ? { ...row, qc: payload.status } : row));
     setShowQcModal(false);
@@ -281,31 +361,27 @@ export default function Home() {
   return (
     <div className={`dashboard-page ${isReviewer ? "can-review" : "read-only"} ${isEnumerator ? "enumerator-dashboard" : "reviewer-dashboard"}`}>
       {dataLoading && authUser && userProfile && <DashboardLoading />}
-      <nav className="topbar"><div className="brand"><span className="brand-mark">+</span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{userProfile?.role || "Firebase User"}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="button button-ghost" onClick={() => setLastUpdated("sekarang")}>↻ <span>Refresh Data</span></button><button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
+      <nav className="topbar"><div className="brand"><span className="brand-mark">+</span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{userProfile?.role || "Firebase User"}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
       <main className="dashboard-content">
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Monitoring &amp; Quality Control"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Data tersinkronisasi <strong>{lastUpdated}</strong></div></section>
         {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Data menunggu QC</strong><p>Pantau status data yang sudah dikirim.</p></div><strong className="role-action-count">3</strong></article></section>}
         <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={String(totalHotspots)} note={dataError || (dataLoading ? "Memuat Firestore..." : "Data aktual Firestore")} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU QC" : "PERLU VALIDASI QC"} value={String(pendingQc)} note="Menunggu pemeriksaan" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={String(hivPositive)} suffix={`/ ${hivTests} Tes`} note="Dari data Firestore" icon="♥" /></section>
-        <section className="visual-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle="Lokasi titik pendataan di wilayah Kota Malang" tag="GIS" /><div className="map-area"><div className="map-label map-label-one">Lowokwaru</div><div className="map-label map-label-two">Klojen</div><div className="map-label map-label-three">Blimbing</div>{["18% 28%", "42% 44%", "66% 24%", "72% 65%", "35% 72%", "54% 58%", "81% 43%", "22% 55%"].map((position, index) => { const [left, top] = position.split(" "); return <span key={index} className="map-pin" style={{ left, top }} />; })}<div className="map-scale">OpenStreetMap <span>+</span><span>-</span></div></div></article><article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Komposisi hotspot berdasarkan wilayah" /><div className="donut-chart"><div><strong>148</strong><small>Total hotspot</small></div></div><div className="legend"><Legend color="teal" label="Lowokwaru" value="42%" /><Legend color="blue" label="Klojen" value="27%" /><Legend color="amber" label="Blimbing" value="18%" /><Legend color="coral" label="Lainnya" value="13%" /></div></article></section>
-        {!isEnumerator && <section className="panel risk-panel"><PanelHeading icon="!" title="Risiko Otomatis" subtitle="Deteksi data baru, tidak aktif, duplikat, tidak lengkap, dan terlambat" tag="Batas 3 hari" /><div className="risk-grid"><Risk label="HOTSPOT BARU" value="14" tone="teal" /><Risk label="TIDAK AKTIF" value="9" tone="coral" /><Risk label="DUPLIKASI" value="4" tone="amber" /><Risk label="TIDAK LENGKAP" value="7" tone="blue" /><Risk label="TERLAMBAT" value="3" tone="purple" /></div></section>}
         <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Quality Control"} subtitle={isEnumerator ? "Pantau status validasi dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau melakukan validasi analis"} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status QC"><option>Semua</option><option>Valid</option><option>Pending</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS FISIK</th><th>STATUS VALIDASI QC</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{hotspot.qc}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button></td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data Firestore..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data <button className="button button-link">Lihat semua data →</button></div></section>
-        <RealDataOverview rows={hotspotRows} />
+        <DashboardOverview rows={hotspotRows} />
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); }} onEdit={setEditingUser} onSave={saveUserProfile} onDelete={removeUserProfile} />}
       {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); }} />}
       {canSupervise && authUser && <SupervisorForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={() => { setShowSupervisionForm(false); setLastUpdated("sekarang"); }} />}
-      {selectedHotspot && !showQcModal && <DetailModal hotspot={selectedHotspot} canReview={isReviewer} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
-      {selectedHotspot && showQcModal && <QcModal hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} />}
+      {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={isReviewer} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
+      {selectedHotspot && showQcModal && <ReviewQcModal hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} />}
     </div>
   );
 }
 
-function Kpi({ tone, label, value, suffix, note, icon }: { tone: string; label: string; value: string; suffix?: string; note: string; icon: string }) { return <article className={`kpi-card kpi-${tone}`}><div className="kpi-top"><span className="kpi-icon">{icon}</span><span className="kpi-arrow">↗</span></div><small>{label}</small><strong>{value}{suffix && <em>{suffix}</em>}</strong><span className="kpi-note">{note}</span></article>; }
 function DashboardLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Data intelligence platform</p><h2>Menyiapkan dashboard</h2><p>Mengambil data terbaru dari Firestore...</p><div className="dashboard-loading-track" /></div></div>; }
-function PanelHeading({ icon, title, subtitle, tag }: { icon: string; title: string; subtitle: string; tag?: string }) { return <div className="panel-heading"><div><h2><span className="heading-icon">{icon}</span>{title}</h2><p>{subtitle}</p></div>{tag && <span className="panel-tag">{tag}</span>}</div>; }
-function Legend({ color, label, value }: { color: string; label: string; value: string }) { return <div className="legend-row"><span className={`legend-dot ${color}`} />{label}<strong>{value}</strong></div>; }
-function Risk({ label, value, tone }: { label: string; value: string; tone: string }) { return <div className={`risk-item risk-${tone}`}><small>{label}</small><strong>{value}</strong></div>; }
 
+// Legacy renderers retained for backwards-compatible references; active UI uses dashboard-overview.tsx.
+/* eslint-disable @typescript-eslint/no-unused-vars */
 function RealDataOverview({ rows }: { rows: Hotspot[] }) {
   const areaCounts = rows.reduce<Record<string, number>>((counts, row) => {
     const area = row.area.split("/")[0].trim() || "Lainnya";
@@ -326,7 +402,7 @@ function RealDataOverview({ rows }: { rows: Hotspot[] }) {
     return { row, left: Math.max(5, Math.min(92, ((longitude - 112.55) / .16) * 100)), top: Math.max(8, Math.min(88, ((-latitude - 7.88) / .16) * 100)) };
   }).filter((item): item is { row: Hotspot; left: number; top: number } => item !== null);
 
-  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinates.length} dari ${rows.length} data memiliki koordinat`} tag="REAL DATA" /><RealLeafletMap rows={rows} /></article><article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Dihitung dari data Firestore" /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Risiko Otomatis" subtitle="Ringkasan status yang dihitung dari data aktual" tag="REAL DATA" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article></section>;
+  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinates.length} dari ${rows.length} data memiliki koordinat`} tag="REAL DATA" /><RealLeafletMap rows={rows} /></article><article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Dihitung dari data Firestore" /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Risiko Otomatis" subtitle="Ringkasan status yang dihitung dari data aktual" tag="REAL DATA" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article>{rows.length >= 25 && <button type="button" className="button button-secondary" onClick={() => window.dispatchEvent(new Event("load-more-submissions"))}>Muat data berikutnya</button>}</section>;
 }
 
 function RealLeafletMap({ rows }: { rows: Hotspot[] }) {
@@ -336,29 +412,44 @@ function RealLeafletMap({ rows }: { rows: Hotspot[] }) {
     const [lat, lng] = (row.coordinates || "").split(/[\s,]+/).map(Number);
     return Number.isFinite(lat) && Number.isFinite(lng) ? { row, lat, lng } : null;
   }).filter((point): point is { row: Hotspot; lat: number; lng: number } => point !== null), [rows]);
+
   useEffect(() => {
     let active = true;
+    const container = mapRef.current;
+    let map: LeafletMap | null = null;
     import("leaflet").then((leaflet) => {
-      if (!active || !mapRef.current || instanceRef.current || points.length === 0) return;
-      const container = mapRef.current;
-      const map = leaflet.map(container, { zoomControl: true }).setView([-7.9666, 112.6326], 12);
-      leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(map);
-      points.forEach(({ row, lat, lng }) => leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).addTo(map).bindPopup(`<strong>${row.name}</strong><br>${row.area}<br>Status QC: ${row.qc}`));
-      if (points.length === 1) map.setView([points[0].lat, points[0].lng], 14);
-      if (points.length > 1) map.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
-      instanceRef.current = map;
+      if (!active || !container || instanceRef.current || points.length === 0 || container.dataset.leafletReady === "true") return;
+      container.dataset.leafletReady = "true";
+      const currentMap = leaflet.map(container, { zoomControl: true }).setView([-7.9666, 112.6326], 12);
+      map = currentMap;
+      instanceRef.current = currentMap;
+      leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(currentMap);
+      points.forEach(({ row, lat, lng }) => {
+        const popup = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = row.name;
+        popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status QC: ${row.qc}`));
+        leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).addTo(currentMap).bindPopup(popup);
+      });
+      if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
+      if (points.length > 1) currentMap.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
     });
     return () => {
       active = false;
-      if (instanceRef.current) {
-        instanceRef.current.remove();
-        instanceRef.current = null;
+      if (map) {
+        map.remove();
+        if (instanceRef.current === map) instanceRef.current = null;
       }
+      if (container) container.dataset.leafletReady = "false";
     };
   }, [points]);
+
   return <div className="leaflet-map-wrap"><div ref={mapRef} className="leaflet-map" />{points.length === 0 && <div className="real-empty">Belum ada koordinat GPS pada data Firestore.</div>}</div>;
 }
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// Legacy modal retained for backwards-compatible references; active UI uses review-modals.tsx.
 function DetailModal({ hotspot, canReview, onClose, onReview }: { hotspot: Hotspot; canReview: boolean; onClose: () => void; onReview: () => void }) {
   const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(hotspot.documentName || "");
   const previewUrl = hotspot.documentFileId ? `/api/documents/preview?fileId=${encodeURIComponent(hotspot.documentFileId)}` : "";
@@ -370,11 +461,12 @@ function DetailItem({ label, value, link, wide }: { label: string; value?: strin
   return <div className={`detail-item ${wide ? "detail-item-wide" : ""}`}><small>{label}</small>{link ? <a href={link} target="_blank" rel="noreferrer">{displayValue}</a> : <strong>{displayValue}</strong>}</div>;
 }
 
+// Legacy modal retained temporarily; active UI uses review-modals.tsx.
 function QcModal({ hotspot, onClose, onSave }: { hotspot: Hotspot; onClose: () => void; onSave: (payload: { status: Hotspot["qc"]; note: string; kelengkapan: string; duplikasi: string; kroscek: string; pemeriksa: string; tanggal: string; document?: File }) => Promise<void> }) {
   const [status, setStatus] = useState<Hotspot["qc"]>(hotspot.qc);
-  const [note, setNote] = useState("");
   const [kelengkapan, setKelengkapan] = useState("lengkap");
   const [duplikasi, setDuplikasi] = useState("tidak_ada");
+  const [note, setNote] = useState("");
   const [kroscek, setKroscek] = useState("sesuai");
   const [pemeriksa, setPemeriksa] = useState("");
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
@@ -387,6 +479,7 @@ function QcModal({ hotspot, onClose, onSave }: { hotspot: Hotspot; onClose: () =
   }
   return <div className="user-modal-backdrop"><section className="user-modal qc-modal" role="dialog" aria-modal="true"><div className="user-modal-header"><div><p className="eyebrow">Quality control</p><h2>Review Data Hotspot</h2><p>{hotspot.name} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="qc-detail-grid"><div><small>ID Data</small><strong>{hotspot.id}</strong></div><div><small>Status fisik</small><strong>{hotspot.status}</strong></div><div><small>Populasi kunci</small><strong>{hotspot.population}</strong></div><div><small>Koordinat</small><strong>{hotspot.coordinates || "-"}</strong></div></div><form onSubmit={submit} className="qc-form"><label>Pemeriksaan kelengkapan<select value={kelengkapan} onChange={(event) => setKelengkapan(event.target.value)}><option value="lengkap">Lengkap &amp; Sesuai Standar</option><option value="perlu_perbaikan">Perlu Perbaikan / Isian Belum Lengkap</option></select></label><label>Indikasi duplikasi<select value={duplikasi} onChange={(event) => setDuplikasi(event.target.value)}><option value="tidak_ada">Tidak Ada Indikasi Duplikasi</option><option value="ada">Ada Indikasi Duplikasi</option></select></label><label>Kroscek antar enumerator<select value={kroscek} onChange={(event) => setKroscek(event.target.value)}><option value="sesuai">Sesuai Hasil Kroscek</option><option value="perlu_klarifikasi">Perlu Klarifikasi Ulang</option></select></label><label>Status data akhir<select value={status} onChange={(event) => setStatus(event.target.value as Hotspot["qc"])}><option value="Valid">Valid - Masuk Database Utama</option><option value="Pending">Perlu Tindak Lanjut</option><option value="Perlu perbaikan">Tidak Valid - Perlu Perbaikan</option></select></label><label>Catatan analis<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} /></label><label>Dokumentasi persetujuan QC<input type="file" accept="image/*,.pdf,.doc,.docx" onChange={(event) => setDocument(event.target.files?.[0])} /></label><div className="qc-form-grid"><label>Nama pemeriksa<input value={pemeriksa} onChange={(event) => setPemeriksa(event.target.value)} required /></label><label>Tanggal pemeriksaan<input type="date" value={tanggal} onChange={(event) => setTanggal(event.target.value)} required /></label></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan hasil QC"}</button></div></form></section></div>;
 }
+/* eslint-enable @typescript-eslint/no-unused-vars */
 function UserManagementModal({ users, loading, error, editingUser, onClose, onEdit, onSave, onDelete }: { users: UserProfile[]; loading: boolean; error: string; editingUser: UserProfile | null; onClose: () => void; onEdit: (user: UserProfile) => void; onSave: (event: React.FormEvent<HTMLFormElement>) => void; onDelete: (user: UserProfile) => void }) {
   return <div className="user-modal-backdrop" role="presentation"><section className="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-management-title"><div className="user-modal-header"><div><p className="eyebrow">Admin control</p><h2 id="user-management-title">Manajemen User</h2><p>Kelola profil, username, email, dan role pengguna.</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div>{error && <p className="login-error user-modal-error">{error}</p>}{editingUser ? <form className="user-edit-form" onSubmit={onSave}><label>Username<input name="username" defaultValue={editingUser.username || ""} required /></label><label>Email Firebase<input name="email" type="email" defaultValue={editingUser.email || ""} required /></label><label>Nama<input name="nama" defaultValue={editingUser.nama || ""} required /></label><label>Role<select name="role" defaultValue={editingUser.role || "enumerator"}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="supervisor">Supervisor</option><option value="enumerator">Enumerator</option></select></label><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={() => onEdit(null as unknown as UserProfile)}>Batal</button><button type="submit" className="button button-primary">Simpan profil</button></div></form> : <div className="user-table-wrap">{loading ? <p className="user-empty">Memuat daftar user...</p> : users.length === 0 ? <p className="user-empty">Belum ada profil user.</p> : <table><thead><tr><th>USERNAME</th><th>NAMA</th><th>EMAIL</th><th>ROLE</th><th>AKSI</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td className="mono">{user.username || "-"}</td><td><strong>{user.nama || "-"}</strong></td><td>{user.email || "-"}</td><td><span className="user-role">{user.role || "-"}</span></td><td><button className="row-action" onClick={() => onEdit(user)} aria-label={`Edit ${user.username || "user"}`}>✎</button><button className="row-action row-action-danger" onClick={() => onDelete(user)} disabled={user.id === undefined} aria-label={`Hapus ${user.username || "user"}`}>×</button></td></tr>)}</tbody></table>}</div>}</section></div>;
 }
@@ -448,6 +541,7 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
     setSaving(true);
     setError("");
     const form = new FormData(event.currentTarget);
+    const supervisedSubmissionIds = rows.filter((row) => row.enumeratorName === String(form.get("namaEnumerator") || "").trim()).map((row) => row.id);
     const checks = [...supervisionImplementationChecks, ...supervisionQualityChecks].reduce<Record<string, string>>((values, _, index) => {
       const section = index < supervisionImplementationChecks.length ? "pelaksanaan" : "kualitas";
       const number = index < supervisionImplementationChecks.length ? index + 1 : index - supervisionImplementationChecks.length + 1;
@@ -456,17 +550,7 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
     }, {});
     try {
       await addDoc(collection(db, "supervisions"), {
-        tanggalSupervisi: String(form.get("tanggalSupervisi") || ""),
-        lokasiWilayah: String(form.get("lokasiWilayah") || "").trim(),
-        namaSupervisor: String(form.get("namaSupervisor") || "").trim(),
-        namaEnumerator: String(form.get("namaEnumerator") || "").trim(),
-        komunitasOrganisasi: String(form.get("komunitasOrganisasi") || "").trim(),
-        jumlahHotspot: Number(form.get("jumlahHotspot") || 0),
         checks,
-        temuanSupervisi: String(form.get("temuanSupervisi") || "").trim(),
-        kendalaLapangan: String(form.get("kendalaLapangan") || "").trim(),
-        perbaikanYangDibutuhkan: String(form.get("perbaikanYangDibutuhkan") || "").trim(),
-        tindakLanjut: String(form.get("tindakLanjut") || "").trim(),
         kesimpulanSupervisi: form.getAll("kesimpulanSupervisi"),
         pengesahanNamaEnumerator: String(form.get("pengesahanNamaEnumerator") || "").trim(),
         pengesahanNamaSupervisor: String(form.get("pengesahanNamaSupervisor") || "").trim(),
@@ -475,6 +559,9 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
         pengesahanTandaTanganEnumerator: String(form.get("pengesahanTandaTanganEnumerator") || "").trim(),
         pengesahanTandaTanganSupervisor: String(form.get("pengesahanTandaTanganSupervisor") || "").trim(),
         supervisorUid: user.uid,
+        submissionIds: supervisedSubmissionIds,
+        workflowStage: "supervisor_review",
+        workflowStatus: "submitted",
         createdAt: new Date().toISOString(),
       });
       onSaved();
@@ -490,12 +577,17 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
 }
 
 function SupervisionChecks({ title, name, items }: { title: string; name: string; items: string[] }) {
-  return <div className="supervision-check-section"><p className="form-section-title">{title}</p><div className="supervision-check-table"><div className="supervision-check-head"><span>No</span><span>Komponen pemeriksaan</span><span>Ya</span><span>Tidak</span></div>{items.map((item, index) => <div className="supervision-check-row" key={item}><span>{index + 1}</span><span>{item}</span><label><input type="radio" name={`${name}_${index + 1}`} value="ya" required={index === 0} /> Ya</label><label><input type="radio" name={`${name}_${index + 1}`} value="tidak" /> Tidak</label></div>)}</div></div>;
+  return <div className="supervision-check-section"><p className="form-section-title">{title}</p><div className="supervision-check-table"><div className="supervision-check-head"><span>No</span><span>Komponen pemeriksaan</span><span>Ya</span><span>Tidak</span></div>{items.map((item, index) => <div className="supervision-check-row" key={item}><span>{index + 1}</span><span>{item}</span><label><input type="radio" name={`${name}_${index + 1}`} value="ya" required /> Ya</label><label><input type="radio" name={`${name}_${index + 1}`} value="tidak" required /> Tidak</label></div>)}</div></div>;
 }
 
 function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profile: UserProfile | null; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const submissionIdempotencyKey = useRef<string | null>(null);
+  const [locationType, setLocationType] = useState("");
+  const [locationSubtype, setLocationSubtype] = useState("");
+  const [statusHotspot, setStatusHotspot] = useState("");
+  const [hotspotCode, setHotspotCode] = useState("");
   const [gps, setGps] = useState("");
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -510,6 +602,8 @@ function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profi
     if (gpsTimeoutRef.current !== null) window.clearTimeout(gpsTimeoutRef.current);
     gpsDialogRef.current?.close();
   }, []);
+
+  return <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={hotspotCode} setHotspotCode={setHotspotCode} locationSubtypes={locationSubtypes} />;
 
   function startGpsCapture() {
     if (gpsLoading) return;
@@ -604,11 +698,12 @@ function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profi
     setSaving(true);
     setError("");
     try {
+      submissionIdempotencyKey.current ||= crypto.randomUUID();
       const fileData = await toBase64(document);
       const uploadResponse = await fetch("/api/documents/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileData, fileName: document.name, fileMime: document.type || "application/octet-stream", username: profile?.username || user.email }),
+        body: JSON.stringify({ fileData, fileName: document.name, fileMime: document.type || "application/octet-stream", username: profile?.username || user.email, idempotencyKey: submissionIdempotencyKey.current }),
       });
       const uploadResult = await uploadResponse.json();
       if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.message || "Upload dokumen gagal.");
@@ -617,12 +712,14 @@ function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profi
         enumeratorUsername: profile?.username || "",
         enumeratorName: profile?.nama || user.email || "",
         organisasi: String(form.get("organisasi") || "").trim(),
+        kodeHotspot: String(form.get("kodeHotspot") || "").trim(),
         namaHotspot: String(form.get("namaHotspot") || "").trim(),
         kecamatan: String(form.get("kecamatan") || "").trim(),
         kelurahan: String(form.get("kelurahan") || "").trim(),
         alamat: String(form.get("alamat") || "").trim(),
         koordinat: gps,
         statusHotspot: String(form.get("statusHotspot") || "").trim(),
+        statusVerifikasi: String(form.get("statusHotspot") || "").trim() === "perlu_verifikasi" ? "perlu_verifikasi" : "terverifikasi_lapangan",
         populasiKunci: form.getAll("populasiKunci"),
         tipeLokasi: String(form.get("tipeLokasi") || "").trim(),
         subTipeLokasi: String(form.get("subTipeLokasi") || "").trim(),
@@ -637,8 +734,9 @@ function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profi
         noHpInforman: String(form.get("noHpInforman") || "").trim(),
         keteranganAktivitas: String(form.get("keteranganAktivitas") || "").trim(),
         kondisiSaatPemetaan: String(form.get("kondisiSaatPemetaan") || "").trim(),
-        document: { name: uploadResult.fileName, fileId: uploadResult.fileId, url: uploadResult.fileUrl },
+        document: { name: uploadResult.fileName, fileId: uploadResult.fileId, url: uploadResult.fileUrl, idempotencyKey: submissionIdempotencyKey.current },
         qcStatus: "pending",
+        workflowStage: "submitted",
         createdAt: new Date().toISOString(),
       });
       onSaved();

@@ -1,0 +1,91 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/user/$(request.auth.uid)).data;
+    }
+
+    function role() {
+      return signedIn() ? profile().role : '';
+    }
+
+    function isAdmin() { return signedIn() && role() == 'admin'; }
+    function isEnumerator() { return signedIn() && role() == 'enumerator'; }
+    function isSupervisor() { return signedIn() && role() == 'supervisor'; }
+    function isCoordinator() { return signedIn() && role() == 'koordinator'; }
+    function isAnalyst() { return signedIn() && (role() == 'data analis' || role() == 'data analyst'); }
+    function isReviewer() { return isAdmin() || isSupervisor() || isCoordinator() || isAnalyst(); }
+
+    function validWorkflowStage(stage) {
+      return isAdmin()
+        || (isSupervisor() && stage == 'supervisor_review')
+        || (isCoordinator() && stage in ['coordinator_review', 'needs_revision'])
+        || (isAnalyst() && stage in ['analyst_review', 'finalized', 'needs_revision']);
+    }
+
+    function validCoordinates(value) {
+      return value is string && value.matches('^-?[0-9]{1,2}(\\.[0-9]{1,8})?,[ ]?-?[0-9]{1,3}(\\.[0-9]{1,8})?$');
+    }
+
+    function validCounts(data) {
+      return data.estimasiJumlahPopulasi is int && data.estimasiJumlahPopulasi >= 0
+        && data.jumlahDiedukasi is int && data.jumlahDiedukasi >= 0
+        && data.jumlahTesHiv is int && data.jumlahTesHiv >= 0
+        && data.jumlahHivPositif is int && data.jumlahHivPositif >= 0
+        && data.jumlahTesHiv <= data.jumlahDiedukasi
+        && data.jumlahHivPositif <= data.jumlahTesHiv;
+    }
+
+    function validSubmission(data) {
+      return data.keys().hasAll([
+          'enumeratorUid', 'kodeHotspot', 'organisasi', 'namaHotspot',
+          'kecamatan', 'kelurahan', 'alamat', 'koordinat', 'statusHotspot',
+          'statusVerifikasi', 'populasiKunci', 'tipeLokasi', 'subTipeLokasi',
+          'document', 'qcStatus', 'workflowStage', 'createdAt'
+        ])
+        && data.enumeratorUid == request.auth.uid
+        && data.kodeHotspot is string && data.kodeHotspot.size() > 0
+        && data.namaHotspot is string && data.namaHotspot.size() > 0
+        && data.organisasi in ['lgi', 'igama', 'wamarapa', 'fatayat_nu']
+        && data.statusHotspot in ['aktif', 'baru', 'tidak_aktif', 'perlu_verifikasi']
+        && data.qcStatus == 'pending'
+        && data.workflowStage == 'submitted'
+        && validCoordinates(data.koordinat)
+        && validCounts(data);
+    }
+
+    match /user/{userId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /submissions/{submissionId} {
+      allow create: if isEnumerator() && validSubmission(request.resource.data);
+      allow read: if signedIn() && (isReviewer() || resource.data.enumeratorUid == request.auth.uid);
+      allow delete: if isAdmin();
+      allow update: if isReviewer()
+        && request.resource.data.enumeratorUid == resource.data.enumeratorUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'qcStatus', 'qcKelengkapan', 'qcDuplikasi', 'qcKroscek', 'qcNote',
+          'qcNamaPemeriksa', 'qcTanggalPemeriksaan', 'qcDokumenPersetujuan',
+          'qcReviewerUid', 'qcReviewedAt', 'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
+        ])
+        && validWorkflowStage(request.resource.data.workflowStage);
+    }
+
+    match /supervisions/{supervisionId} {
+      allow create: if (isSupervisor() || isCoordinator() || isAdmin())
+        && request.resource.data.supervisorUid == request.auth.uid
+        && request.resource.data.workflowStage == 'supervisor_review'
+        && request.resource.data.checks.keys().size() == 12;
+      allow read: if isReviewer() || (signedIn() && resource.data.supervisorUid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+  }
+}

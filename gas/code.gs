@@ -38,24 +38,52 @@ function doPost(e) {
       return jsonResponse({ success: false, message: 'Folder Drive atau data dokumen belum lengkap.' });
     }
 
-    const parentFolder = DriveApp.getFolderById(folderId);
-    const requestedFolder = String(payload.folderName || 'Dokumen Enumerator').replace(/[^a-zA-Z0-9 _-]/g, '').trim();
-    const targetFolder = getOrCreateFolder(parentFolder, requestedFolder || 'Dokumen Enumerator');
-    const safeName = String(payload.fileName).replace(/[\\/:*?"<>|]/g, '_');
-    const file = targetFolder.createFile(
-      Utilities.newBlob(
-        Utilities.base64Decode(payload.fileData),
-        payload.fileMime || 'application/octet-stream',
-        safeName
-      )
-    );
+    const idempotencyKey = String(payload.idempotencyKey || '').trim();
+    if (!idempotencyKey) {
+      return jsonResponse({ success: false, message: 'Idempotency key dokumen belum lengkap.' });
+    }
+    if (!/^[a-zA-Z0-9_-]{8,160}$/.test(idempotencyKey)) {
+      return jsonResponse({ success: false, message: 'Idempotency key dokumen tidak valid.' });
+    }
+    if (String(payload.fileData).length > 14000000) {
+      return jsonResponse({ success: false, message: 'Ukuran dokumen terlalu besar.' });
+    }
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      const idempotencyProperties = PropertiesService.getScriptProperties();
+      const existingFileId = idempotencyProperties.getProperty('UPLOAD_' + idempotencyKey);
+      if (existingFileId) {
+        try {
+          const existingFile = DriveApp.getFileById(existingFileId);
+          return jsonResponse({ success: true, fileId: existingFile.getId(), fileName: existingFile.getName(), fileUrl: existingFile.getUrl(), idempotent: true });
+        } catch (existingFileError) {
+          idempotencyProperties.deleteProperty('UPLOAD_' + idempotencyKey);
+        }
+      }
 
-    return jsonResponse({
-      success: true,
-      fileId: file.getId(),
-      fileName: file.getName(),
-      fileUrl: file.getUrl()
-    });
+      const parentFolder = DriveApp.getFolderById(folderId);
+      const requestedFolder = String(payload.folderName || 'Dokumen Enumerator').replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+      const targetFolder = getOrCreateFolder(parentFolder, requestedFolder || 'Dokumen Enumerator');
+      const safeName = String(payload.fileName).replace(/[\\/:*?"<>|]/g, '_');
+      const file = targetFolder.createFile(
+        Utilities.newBlob(
+          Utilities.base64Decode(payload.fileData),
+          payload.fileMime || 'application/octet-stream',
+          safeName
+        )
+      );
+      idempotencyProperties.setProperty('UPLOAD_' + idempotencyKey, file.getId());
+
+      return jsonResponse({
+        success: true,
+        fileId: file.getId(),
+        fileName: file.getName(),
+        fileUrl: file.getUrl()
+      });
+    } finally {
+      lock.releaseLock();
+    }
   } catch (error) {
     return jsonResponse({
       success: false,
