@@ -266,6 +266,14 @@ export default function Home() {
     });
   }, [pendingQc]);
 
+  useEffect(() => {
+    document.querySelectorAll<HTMLElement>("label, .detail-item small").forEach((element) => {
+      if (element.textContent?.trim() === "Keterangan Aktivitas" || element.textContent?.trim() === "Keterangan aktivitas") {
+        element.textContent = "Keterangan Informan";
+      }
+    });
+  }, [selectedHotspot, showEnumeratorForm]);
+
   async function handleLogout() {
     if (auth) await signOut(auth);
   }
