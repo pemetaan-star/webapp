@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 type ReviewHotspot = {
   id: string;
@@ -27,6 +27,14 @@ type ReviewHotspot = {
   mappingCondition?: string;
   documentName?: string;
   documentFileId?: string;
+  qc?: string;
+  workflowStage?: string;
+  qcKelengkapan?: string;
+  qcDuplikasi?: string;
+  qcKroscek?: string;
+  qcNote?: string;
+  qcInspector?: string;
+  qcDate?: string;
 };
 
 type QcPayload = {
@@ -43,6 +51,39 @@ type QcPayload = {
 export function ReviewDetailModal({ hotspot, canReview, onClose, onReview }: { hotspot: ReviewHotspot; canReview: boolean; onClose: () => void; onReview: () => void }) {
   const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(hotspot.documentName || "");
   const previewUrl = hotspot.documentFileId ? `/api/documents/preview?fileId=${encodeURIComponent(hotspot.documentFileId)}` : "";
+  useEffect(() => {
+    const modal = document.querySelector<HTMLElement>(".detail-modal");
+    if (!modal || modal.querySelector(".qc-result-section")) return;
+    const section = document.createElement("div");
+    section.className = "detail-section qc-result-section";
+    const title = document.createElement("p");
+    title.className = "form-section-title";
+    title.textContent = "Hasil Validasi QC";
+    const grid = document.createElement("div");
+    grid.className = "detail-grid";
+    const values: Array<[string, string | undefined]> = [["Status QC", hotspot.qc], ["Tahap workflow", hotspot.workflowStage], ["Kelengkapan", hotspot.qcKelengkapan], ["Duplikasi", hotspot.qcDuplikasi], ["Kroscek", hotspot.qcKroscek], ["Pemeriksa", hotspot.qcInspector], ["Tanggal pemeriksaan", hotspot.qcDate]];
+    values.forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.className = "detail-item";
+      const labelNode = document.createElement("small");
+      labelNode.textContent = label;
+      const valueNode = document.createElement("strong");
+      valueNode.textContent = value || "-";
+      item.append(labelNode, valueNode);
+      grid.appendChild(item);
+    });
+    const note = document.createElement("div");
+    note.className = "detail-item detail-item-wide";
+    const noteLabel = document.createElement("small");
+    noteLabel.textContent = "Catatan QC";
+    const noteValue = document.createElement("strong");
+    noteValue.textContent = hotspot.qcNote || "-";
+    note.append(noteLabel, noteValue);
+    section.append(title, grid, note);
+    const actions = modal.querySelector(".user-modal-actions");
+    modal.insertBefore(section, actions || null);
+    return () => section.remove();
+  }, [hotspot]);
   return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">x</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={hotspot.population} /><DetailItem label="Tipe lokasi" value={[hotspot.locationType, hotspot.locationSubtype].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /><DetailItem label="Tes HIV / HIV+" value={`${hotspot.hivTests || 0} / ${hotspot.hivPositive || 0}`} /></div><DetailItem label="Keterangan aktivitas" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={hotspot.informationSource} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen</p>{isImage && previewUrl && <a className="document-preview" href={previewUrl} target="_blank" rel="noreferrer"><img src={previewUrl} alt={`Dokumentasi ${hotspot.name}`} /></a>}{hotspot.documentName && <DetailItem label="Nama dokumen" value={hotspot.documentName} link={hotspot.documentFileId ? previewUrl : undefined} />}</div>{canReview && <div className="user-modal-actions"><button type="button" className="button button-primary" onClick={onReview}>Review QC</button></div>}</section></div>;
 }
 

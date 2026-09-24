@@ -141,6 +141,9 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       documentFileId: String(data.document?.fileId || ""),
       documentUrl: String(data.document?.url || ""),
       qcNote: String(data.qcNote || ""),
+      qcKelengkapan: String(data.qcKelengkapan || ""),
+      qcDuplikasi: String(data.qcDuplikasi || ""),
+      qcKroscek: String(data.qcKroscek || ""),
       qcInspector: String(data.qcNamaPemeriksa || ""),
       qcDate: String(data.qcTanggalPemeriksaan || ""),
     } as Hotspot & { enumeratorUid: string };
