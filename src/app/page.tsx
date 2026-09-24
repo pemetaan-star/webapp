@@ -289,7 +289,7 @@ export default function Home() {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
     const firstPhoto = form?.querySelector<HTMLInputElement>('input[name="document"]');
     if (form && firstPhoto && !form.dataset.photoCount) {
-      form.dataset.photoCount = "3";
+      form.dataset.photoCount = "2";
       firstPhoto.required = true;
       firstPhoto.removeAttribute("capture");
       const firstLabel = firstPhoto.closest("label");
@@ -300,7 +300,9 @@ export default function Home() {
         if (firstText) firstText.textContent = "Foto Dokumentasi 1";
         form.insertBefore(firstLabel, formActions);
       }
-      [2, 3].forEach((number) => {
+      const phoneInput = form.querySelector<HTMLInputElement>('input[name="noHpInforman"]');
+      if (phoneInput) phoneInput.required = false;
+      [2].forEach((number) => {
         const label = document.createElement("label");
         label.className = "form-wide";
         label.textContent = `Foto Dokumentasi ${number}`;
@@ -794,8 +796,8 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
     if (gpsAccuracy !== null && gpsAccuracy > 100) return setError("Akurasi GPS masih rendah. Ambil lokasi ulang di area terbuka.");
     const form = new FormData(event.currentTarget);
-    const documents = [1, 2, 3].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
-    if (documents.some((file) => !file || !file.size)) return setError("Tiga foto dokumentasi wajib dipilih.");
+    const documents = [1, 2].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
+    if (documents.some((file) => !file || !file.size)) return setError("Dua foto dokumentasi wajib dipilih.");
     if (!gps) return setError("Titik koordinat GPS wajib diambil dari perangkat.");
     const educated = Number(form.get("jumlahDiedukasi") || 0);
     setSaving(true);
