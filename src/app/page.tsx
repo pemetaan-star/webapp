@@ -370,7 +370,7 @@ export default function Home() {
         <DashboardOverview rows={hotspotRows} />
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); }} onEdit={setEditingUser} onSave={saveUserProfile} onDelete={removeUserProfile} />}
-      {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); }} />}
+      {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} existingHotspots={hotspotRows} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); }} />}
       {canSupervise && authUser && <SupervisorForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={() => { setShowSupervisionForm(false); setLastUpdated("sekarang"); }} />}
       {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={isReviewer} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
       {selectedHotspot && showQcModal && <ReviewQcModal hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} />}
@@ -580,7 +580,7 @@ function SupervisionChecks({ title, name, items }: { title: string; name: string
   return <div className="supervision-check-section"><p className="form-section-title">{title}</p><div className="supervision-check-table"><div className="supervision-check-head"><span>No</span><span>Komponen pemeriksaan</span><span>Ya</span><span>Tidak</span></div>{items.map((item, index) => <div className="supervision-check-row" key={item}><span>{index + 1}</span><span>{item}</span><label><input type="radio" name={`${name}_${index + 1}`} value="ya" required /> Ya</label><label><input type="radio" name={`${name}_${index + 1}`} value="tidak" required /> Tidak</label></div>)}</div></div>;
 }
 
-function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profile: UserProfile | null; onClose: () => void; onSaved: () => void }) {
+function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: { user: User; profile: UserProfile | null; existingHotspots: Hotspot[]; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const submissionIdempotencyKey = useRef<string | null>(null);
@@ -707,12 +707,22 @@ function EnumeratorForm({ user, profile, onClose, onSaved }: { user: User; profi
       });
       const uploadResult = await uploadResponse.json();
       if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.message || "Upload dokumen gagal.");
+      const normalizedHotspotCode = String(form.get("kodeHotspot") || "").trim().toUpperCase();
+      const relatedVisits = existingHotspots.filter((hotspot) => hotspot.hotspotCode?.trim().toUpperCase() === normalizedHotspotCode);
+      const previousVisit = relatedVisits[0];
+      const visitType = previousVisit ? "follow_up" : "initial";
       await addDoc(collection(db, "submissions"), {
         enumeratorUid: user.uid,
         enumeratorUsername: profile?.username || "",
         enumeratorName: profile?.nama || user.email || "",
         organisasi: String(form.get("organisasi") || "").trim(),
         kodeHotspot: String(form.get("kodeHotspot") || "").trim(),
+        hotspotKey: normalizedHotspotCode,
+        visitType,
+        visitNumber: visitType === "follow_up" ? relatedVisits.length + 1 : 1,
+        previousVisitId: previousVisit?.id || "",
+        visitReason: visitType === "follow_up" ? "Kunjungan ulang berdasarkan kode hotspot yang sama" : "",
+        visitedAt: new Date().toISOString(),
         namaHotspot: String(form.get("namaHotspot") || "").trim(),
         kecamatan: String(form.get("kecamatan") || "").trim(),
         kelurahan: String(form.get("kelurahan") || "").trim(),
