@@ -48,25 +48,34 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
     const container = mapRef.current;
     import("leaflet").then((leaflet) => {
       if (!active || !container || !container.isConnected || instanceRef.current || points.length === 0) return;
-      const currentMap = leaflet.map(container, { zoomControl: true }).setView([-7.9666, 112.6326], 12);
-      instanceRef.current = currentMap;
-      leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(currentMap);
-      points.forEach(({ row, lat, lng }) => {
-        const popup = document.createElement("div");
-        const name = document.createElement("strong");
-        name.textContent = row.name;
-        popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status QC: ${row.qc}`));
-        leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).addTo(currentMap).bindPopup(popup);
-      });
-      if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
-      if (points.length > 1) currentMap.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
+      try {
+        const currentMap = leaflet.map(container, { zoomControl: true }).setView([-7.9666, 112.6326], 12);
+        instanceRef.current = currentMap;
+        leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(currentMap);
+        points.forEach(({ row, lat, lng }) => {
+          const popup = document.createElement("div");
+          const name = document.createElement("strong");
+          name.textContent = row.name;
+          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status QC: ${row.qc}`));
+          leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).addTo(currentMap).bindPopup(popup);
+        });
+        if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
+        if (points.length > 1) currentMap.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
+      } catch {
+        instanceRef.current = null;
+        if (container.isConnected) container.replaceChildren();
+      }
     });
     return () => {
       active = false;
       const currentMap = instanceRef.current;
       if (currentMap && currentMap.getContainer() === container) {
         instanceRef.current = null;
-        currentMap.remove();
+        try {
+          currentMap.remove();
+        } catch {
+          if (container?.isConnected) container.replaceChildren();
+        }
       }
     };
   }, [points]);
