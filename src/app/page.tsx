@@ -24,8 +24,6 @@ type Hotspot = {
   hotspotCode?: string;
   verificationStatus?: string;
   coordinates?: string;
-  hivPositive?: number;
-  hivTests?: number;
   enumeratorName?: string;
   enumeratorUsername?: string;
   organisasi?: string;
@@ -35,6 +33,8 @@ type Hotspot = {
   activityTime?: string;
   populationEstimate?: number;
   educated?: number;
+  hivPositive?: number;
+  hivTests?: number;
   notes?: string;
   informationSource?: string;
   informantPhone?: string;
@@ -113,8 +113,6 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       hotspotCode: String(data.kodeHotspot || ""),
       verificationStatus: String(data.statusVerifikasi || ""),
       coordinates: String(data.koordinat || ""),
-      hivPositive: Number(data.jumlahHivPositif || 0),
-      hivTests: Number(data.jumlahTesHiv || 0),
       enumeratorName,
       enumeratorUsername: String(data.enumeratorUsername || ""),
       enumeratorUid,
@@ -125,6 +123,8 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       activityTime: Array.isArray(data.waktuAktivitas) ? data.waktuAktivitas.join(", ") : String(data.waktuAktivitas || ""),
       populationEstimate: Number(data.estimasiJumlahPopulasi || 0),
       educated: Number(data.jumlahDiedukasi || 0),
+      hivPositive: Number(data.jumlahHivPositif || 0),
+      hivTests: Number(data.jumlahTesHiv || 0),
       notes: String(data.catatan || ""),
       informationSource: String(data.sumberInformasi || ""),
       informantPhone: String(data.noHpInforman || ""),
@@ -171,8 +171,8 @@ export default function Home() {
   const totalHotspots = hotspotRows.length;
   const activeHotspots = hotspotRows.filter((item) => item.status === "Aktif" || item.status === "Baru").length;
   const pendingQc = hotspotRows.filter((item) => item.qc !== "Valid").length;
-  const hivPositive = hotspotRows.reduce((total, item) => total + (item.hivPositive || 0), 0);
-  const hivTests = hotspotRows.reduce((total, item) => total + (item.hivTests || 0), 0);
+  const hivPositive = 0;
+  const hivTests = 0;
   const roleKey = normalizeRole(userProfile?.role);
   const isEnumerator = roleKey === "enumerator";
   const isSupervisor = roleKey.includes("supervisor") || roleKey.includes("supervisi");
@@ -694,9 +694,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (!document || !document.size) return setError("Dokumen dokumentasi wajib dipilih.");
     if (!gps) return setError("Titik koordinat GPS wajib diambil dari perangkat.");
     const educated = Number(form.get("jumlahDiedukasi") || 0);
-    const hivTests = Number(form.get("jumlahTesHiv") || 0);
-    const hivPositive = Number(form.get("jumlahHivPositif") || 0);
-    if (hivTests > educated || hivPositive > hivTests) return setError("Jumlah tes tidak boleh melebihi edukasi, dan HIV+ tidak boleh melebihi jumlah tes.");
     setSaving(true);
     setError("");
     try {
@@ -739,8 +736,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         waktuAktivitas: form.getAll("waktuAktivitas"),
         estimasiJumlahPopulasi: Number(form.get("estimasiJumlahPopulasi") || 0),
         jumlahDiedukasi: educated,
-        jumlahTesHiv: hivTests,
-        jumlahHivPositif: hivPositive,
         catatan: String(form.get("catatan") || "").trim(),
         sumberInformasi: String(form.get("sumberInformasi") || "").trim(),
         noHpInforman: String(form.get("noHpInforman") || "").trim(),
