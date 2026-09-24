@@ -80,7 +80,7 @@ const workflowStageLabels: Record<Hotspot["workflowStage"], string> = {
   needs_revision: "Perlu perbaikan",
 };
 const locationSubtypes: Record<string, Array<[string, string]>> = {
-  ruang_publik: [["jalanan_mangkal", "Jalanan / Titik Mangkal"], ["taman_kota", "Taman Kota / Alun-Alun / Halaman"], ["stasiun_terminal", "Stasiun / Terminal / Halte"], ["bangunan_kosong", "Bangunan Kosong / Mangkrak"], ["ruang_publik_lainnya", "Lainnya"]],
+  ruang_publik: [["jalanan_mangkal", "Jalanan / Titik Mangkal"], ["taman_kota", "Taman Kota / Alun-Alun / Halaman"], ["stasiun_terminal", "Stasiun / Terminal / Halte"], ["mall", "Mall"], ["makam", "Makam"], ["bangunan_kosong", "Bangunan Kosong / Mangkrak"], ["ruang_publik_lainnya", "Lainnya"]],
   tempat_makan_hiburan: [["warung_makan", "Warung Kopi / Warung Makan"], ["kafe_restoran", "Kafe / Restoran"], ["bar_club", "Bar / Club / Diskotik"], ["karaoke", "Karaoke (Hall / Room)"], ["tempat_makan_lainnya", "Lainnya"]],
   akomodasi_private: [["kos_apartemen", "Kos / Apartemen"], ["rumah_tinggal", "Rumah Tinggal / Kontrakan"], ["penginapan_hotel", "Penginapan / Hotel / Losmen"], ["akomodasi_lainnya", "Lainnya"]],
   perawatan_kebugaran: [["salon", "Salon"], ["spa_gym", "Spa / Sauna / Gym"], ["panti_pijat", "Panti Pijat"], ["perawatan_lainnya", "Lainnya"]],
