@@ -226,8 +226,10 @@ export default function Home() {
     }, (error) => {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
       setDataError(code === "permission-denied"
-        ? "Akses ditolak. Pastikan profil user tersimpan di user/{UID Firebase} dan role berisi koordinator/data analis/admin."
-        : "Data Firestore tidak dapat dimuat. Periksa Rules dan indeks submissions.");
+        ? "Akses Firestore ditolak (permission-denied). Pastikan dokumen user/{UID Firebase} tersedia dan role sesuai."
+        : code === "failed-precondition"
+          ? "Query Firestore memerlukan index. Buka tautan index dari Console Firebase atau periksa index submissions."
+          : `Data Firestore tidak dapat dimuat${code ? ` (${code})` : ""}. Periksa konfigurasi Firebase dan Rules.`);
       setDataLoading(false);
     });
     return unsubscribe;
