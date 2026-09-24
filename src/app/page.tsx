@@ -741,7 +741,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     form.dataset.visitPicker = "true";
     const picker = document.createElement("div");
     picker.className = "visit-picker form-wide";
-    picker.innerHTML = '<label>Jenis pendataan<select name="visitMode"><option value="initial">Hotspot baru</option><option value="follow_up">Kunjungan ulang</option></select></label><label class="follow-up-hotspot" hidden>Pilih hotspot<select name="previousHotspotId"><option value="">Pilih hotspot yang dikunjungi ulang</option></select></label>';
+    picker.innerHTML = '<label>Jenis pendataan<select name="visitMode"><option value="initial">Kunjungan 1</option><option value="follow_up">Kunjungan 2</option></select></label><label class="follow-up-hotspot" hidden>Pilih hotspot<select name="previousHotspotId"><option value="">Pilih hotspot untuk kunjungan 2</option></select></label>';
     const frame = window.requestAnimationFrame(() => {
       if (form.isConnected) form.insertBefore(picker, form.querySelector(".form-section-title"));
     });
