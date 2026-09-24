@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 
 type EnumeratorFormFieldsProps = {
   user: User;
-  profile: { nama?: string; username?: string } | null;
+  profile: { nama?: string; username?: string; organisasi?: string } | null;
   error: string;
   saving: boolean;
   gps: string;

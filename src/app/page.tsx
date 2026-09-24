@@ -57,7 +57,17 @@ type UserProfile = {
   name?: string;
   nama?: string;
   role?: string;
+  organisasi?: string;
 };
+
+function normalizeOrganization(value?: string) {
+  const normalized = (value || "").toLowerCase();
+  if (normalized.includes("igama")) return "igama";
+  if (normalized.includes("wamarapa")) return "wamarapa";
+  if (normalized.includes("fatayat") || normalized.includes("penasun")) return "fatayat_nu";
+  if (normalized.includes("lgi") || normalized.includes("lingkar gagasan")) return "lgi";
+  return "";
+}
 
 function normalizeUserProfile(id: string, data: Record<string, unknown>) {
   const profile = { id, ...data } as UserProfile;
@@ -743,6 +753,12 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
     if (!form) return;
     form.setAttribute("aria-busy", String(saving));
+    const organizationSelect = form.querySelector<HTMLSelectElement>('select[name="organisasi"]');
+    const organizationValue = normalizeOrganization(profile?.organisasi);
+    if (organizationSelect && organizationValue) {
+      organizationSelect.value = organizationValue;
+      organizationSelect.dataset.profileOrganization = "true";
+    }
     let loading = form.querySelector<HTMLElement>(".form-saving-indicator");
     if (saving && !loading) {
       loading = document.createElement("div");
@@ -753,7 +769,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
       loading.remove();
     }
     return () => loading?.remove();
-  }, [saving]);
+  }, [profile?.organisasi, saving]);
 
   useEffect(() => {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
