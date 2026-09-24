@@ -289,7 +289,7 @@ export default function Home() {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
     const firstPhoto = form?.querySelector<HTMLInputElement>('input[name="document"]');
     if (form && firstPhoto && !form.dataset.photoCount) {
-      form.dataset.photoCount = "2";
+      form.dataset.photoCount = "3";
       firstPhoto.required = true;
       firstPhoto.removeAttribute("capture");
       const firstLabel = firstPhoto.closest("label");
@@ -302,7 +302,7 @@ export default function Home() {
       }
       const phoneInput = form.querySelector<HTMLInputElement>('input[name="noHpInforman"]');
       if (phoneInput) phoneInput.required = false;
-      [2].forEach((number) => {
+      [2, 3].forEach((number) => {
         const label = document.createElement("label");
         label.className = "form-wide";
         label.textContent = `Foto Dokumentasi ${number}`;
@@ -310,7 +310,7 @@ export default function Home() {
         input.name = `document${number}`;
         input.type = "file";
         input.accept = "image/*";
-        input.required = true;
+        input.required = number === 2;
         label.appendChild(input);
         form.insertBefore(label, formActions);
       });
@@ -865,8 +865,9 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (!db) return setError("Firestore belum siap.");
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
     const form = new FormData(event.currentTarget);
-    const documents = [1, 2].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
-    if (documents.some((file) => !file || !file.size)) return setError("Dua foto dokumentasi wajib dipilih.");
+    const allDocuments = [1, 2, 3].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
+    if (allDocuments.slice(0, 2).some((file) => !file || !file.size)) return setError("Dua foto dokumentasi wajib dipilih.");
+    const documents = allDocuments.filter((file) => file && file.size);
     if (!gps) return setError("Titik koordinat GPS wajib diambil dari perangkat.");
     const educated = Number(form.get("jumlahDiedukasi") || 0);
     setSaving(true);
