@@ -306,6 +306,23 @@ export default function Home() {
         form.insertBefore(label, formActions);
       });
     }
+    const mainLocationSelect = form?.querySelector<HTMLSelectElement>('select[name="tipeLokasi"]');
+    mainLocationSelect?.querySelector('option[value="lainnya"]')?.remove();
+    const subtypeSelect = form?.querySelector<HTMLSelectElement>('select[name="subTipeLokasi"]');
+    const otherLocationInput = form?.querySelector<HTMLInputElement>('input[name="tipeLokasiLainnya"]');
+    const otherLocationLabel = otherLocationInput?.closest("label");
+    if (otherLocationLabel && otherLocationInput && subtypeSelect) {
+      const syncOtherLocation = () => {
+        const isOtherSubtype = subtypeSelect.value === "lainnya" || subtypeSelect.value.endsWith("_lainnya");
+        otherLocationLabel.hidden = !isOtherSubtype;
+        otherLocationInput.required = isOtherSubtype;
+        if (isOtherSubtype) otherLocationLabel.firstChild!.textContent = "Keterangan Sub-Tipe Lokasi Lainnya";
+        else otherLocationInput.value = "";
+      };
+      syncOtherLocation();
+      subtypeSelect.addEventListener("change", syncOtherLocation);
+      return () => subtypeSelect.removeEventListener("change", syncOtherLocation);
+    }
   }, [selectedHotspot, showEnumeratorForm]);
 
   async function handleLogout() {
