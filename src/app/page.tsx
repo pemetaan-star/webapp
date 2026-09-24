@@ -742,7 +742,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     const picker = document.createElement("div");
     picker.className = "visit-picker form-wide";
     picker.innerHTML = '<label>Jenis pendataan<select name="visitMode"><option value="initial">Hotspot baru</option><option value="follow_up">Kunjungan ulang</option></select></label><label class="follow-up-hotspot" hidden>Pilih hotspot<select name="previousHotspotId"><option value="">Pilih hotspot yang dikunjungi ulang</option></select></label>';
-    window.requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
       if (form.isConnected) form.insertBefore(picker, form.querySelector(".form-section-title"));
     });
     const modeSelect = picker.querySelector<HTMLSelectElement>('select[name="visitMode"]')!;
@@ -782,6 +782,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     hotspotSelect.addEventListener("change", selectHotspot);
     syncMode();
     return () => {
+      window.cancelAnimationFrame(frame);
       modeSelect.removeEventListener("change", syncMode);
       hotspotSelect.removeEventListener("change", selectHotspot);
       picker.remove();
