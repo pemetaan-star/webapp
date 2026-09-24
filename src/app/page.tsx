@@ -710,6 +710,22 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     gpsDialogRef.current?.close();
   }, []);
 
+  useEffect(() => {
+    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    if (!form) return;
+    form.setAttribute("aria-busy", String(saving));
+    let loading = form.querySelector<HTMLElement>(".form-saving-indicator");
+    if (saving && !loading) {
+      loading = document.createElement("div");
+      loading.className = "form-saving-indicator";
+      loading.innerHTML = '<span class="form-saving-spinner" aria-hidden="true"></span><strong>Mengirim data...</strong><small>Foto sedang diunggah dan data sedang disimpan.</small>';
+      form.appendChild(loading);
+    } else if (!saving && loading) {
+      loading.remove();
+    }
+    return () => loading?.remove();
+  }, [saving]);
+
   return <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={hotspotCode} setHotspotCode={setHotspotCode} locationSubtypes={locationSubtypes} />;
 
   function startGpsCapture() {
