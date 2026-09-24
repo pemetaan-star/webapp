@@ -651,6 +651,27 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
   const [error, setError] = useState("");
   const enumerators = Array.from(new Set(rows.map((row) => row.enumeratorName).filter(Boolean)));
 
+  useEffect(() => {
+    if (!open) return;
+    const form = document.querySelector<HTMLFormElement>(".supervision-form");
+    const enumeratorSelect = form?.querySelector<HTMLSelectElement>('select[name="namaEnumerator"]');
+    const organizationSelect = form?.querySelector<HTMLSelectElement>('select[name="komunitasOrganisasi"]');
+    const locationInput = form?.querySelector<HTMLInputElement>('input[name="lokasiWilayah"]');
+    const countInput = form?.querySelector<HTMLInputElement>('input[name="jumlahHotspot"]');
+    if (!form || !enumeratorSelect || !organizationSelect || !locationInput || !countInput) return;
+    const updateFields = () => {
+      const selectedRows = rows.filter((row) => row.enumeratorName === enumeratorSelect.value);
+      const organization = selectedRows.find((row) => row.organisasi)?.organisasi || "";
+      const locations = Array.from(new Set(selectedRows.map((row) => row.area).filter(Boolean)));
+      organizationSelect.value = organization;
+      locationInput.value = locations.join(", ");
+      countInput.value = String(selectedRows.length);
+    };
+    enumeratorSelect.addEventListener("change", updateFields);
+    updateFields();
+    return () => enumeratorSelect.removeEventListener("change", updateFields);
+  }, [open, rows]);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!db) return setError("Firestore belum siap.");
