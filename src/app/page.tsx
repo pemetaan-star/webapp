@@ -87,6 +87,13 @@ const locationSubtypes: Record<string, Array<[string, string]>> = {
   platform_virtual: [["aplikasi_kencan", "Aplikasi Kencan"], ["media_sosial", "Media Sosial & Grup Chat"], ["virtual_lainnya", "Lainnya"]],
   lainnya: [["lainnya", "Lainnya"]],
 };
+const malangKelurahan: Record<string, string[]> = {
+  Blimbing: ["Arjosari", "Balearjosari", "Blimbing", "Bunulrejo", "Jodipan", "Kesatrian", "Pandanwangi", "Polehan", "Polowijen", "Purwantoro", "Purwodadi"],
+  Kedungkandang: ["Arjowinangun", "Bumiayu", "Buring", "Cemorokandang", "Kedungkandang", "Kotalama", "Lesanpuro", "Madyopuro", "Mergosono", "Sawojajar", "Tlogowaru", "Wonokoyo"],
+  Klojen: ["Bareng", "Gadingkasri", "Kasin", "Kauman", "Kiduldalem", "Klojen", "Oro-Oro Dowo", "Penanggungan", "Rampal Celaket", "Samaan", "Sukoharjo"],
+  Lowokwaru: ["Dinoyo", "Jatimulyo", "Ketawanggede", "Lowokwaru", "Merjosari", "Mojolangu", "Sumbersari", "Tasikmadu", "Tlogomas", "Tulusrejo", "Tunjungsekar"],
+  Sukun: ["Bakalan Krajan", "Bandulan", "Banyurip", "Bandungrejosari", "Ciptomulyo", "Gadang", "Karangbesuki", "Kebonsari", "Mulyorejo", "Pisangcandi", "Sukun", "Tanjungrejo"],
+};
 
 async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<DocumentData>[] }, firestore: NonNullable<typeof db>) {
   return Promise.all(snapshot.docs.map(async (item) => {
@@ -324,6 +331,44 @@ export default function Home() {
       return () => subtypeSelect.removeEventListener("change", syncOtherLocation);
     }
   }, [selectedHotspot, showEnumeratorForm]);
+
+  useEffect(() => {
+    if (!showEnumeratorForm) return;
+    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    const districtInput = form?.querySelector<HTMLInputElement>('input[name="kecamatan"]');
+    const villageInput = form?.querySelector<HTMLInputElement>('input[name="kelurahan"]');
+    if (!form || !districtInput || !villageInput) return;
+    const districtSelect = document.createElement("select");
+    districtSelect.name = "kecamatan";
+    districtSelect.required = true;
+    districtSelect.className = districtInput.className;
+    districtSelect.innerHTML = '<option value="">Pilih kecamatan</option>';
+    Object.keys(malangKelurahan).forEach((district) => {
+      const option = document.createElement("option");
+      option.value = district;
+      option.textContent = district;
+      districtSelect.appendChild(option);
+    });
+    const villageSelect = document.createElement("select");
+    villageSelect.name = "kelurahan";
+    villageSelect.required = true;
+    villageSelect.className = villageInput.className;
+    const updateVillages = () => {
+      villageSelect.innerHTML = `<option value="">${districtSelect.value ? "Pilih kelurahan" : "Pilih kecamatan dulu"}</option>`;
+      (malangKelurahan[districtSelect.value] || []).forEach((village) => {
+        const option = document.createElement("option");
+        option.value = village;
+        option.textContent = village;
+        villageSelect.appendChild(option);
+      });
+      villageSelect.disabled = !districtSelect.value;
+    };
+    districtInput.replaceWith(districtSelect);
+    villageInput.replaceWith(villageSelect);
+    updateVillages();
+    districtSelect.addEventListener("change", updateVillages);
+    return () => districtSelect.removeEventListener("change", updateVillages);
+  }, [showEnumeratorForm]);
 
   async function handleLogout() {
     if (auth) await signOut(auth);
