@@ -291,6 +291,7 @@ export default function Home() {
     if (form && firstPhoto && !form.dataset.photoCount) {
       form.dataset.photoCount = "3";
       firstPhoto.required = true;
+      firstPhoto.removeAttribute("capture");
       const firstLabel = firstPhoto.closest("label");
       const formActions = form.querySelector<HTMLElement>(".user-modal-actions");
       if (firstLabel) {
@@ -307,7 +308,6 @@ export default function Home() {
         input.name = `document${number}`;
         input.type = "file";
         input.accept = "image/*";
-        input.setAttribute("capture", "environment");
         input.required = true;
         label.appendChild(input);
         form.insertBefore(label, formActions);
