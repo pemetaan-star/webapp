@@ -697,7 +697,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   const [statusHotspot, setStatusHotspot] = useState("");
   const [hotspotCode, setHotspotCode] = useState("");
   const [gps, setGps] = useState("");
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const gpsDialogRef = useRef<{ showResult: (result: { latitude: string; longitude: string; accuracy: number }, onAccept: () => void, onRetry: () => void) => void; close: () => void } | null>(null);
   const [gpsCandidate, setGpsCandidate] = useState<{ location: string; latitude: string; longitude: string; accuracy: number } | null>(null);
@@ -781,7 +780,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   function acceptGps() {
     if (!gpsCandidate) return;
     setGps(gpsCandidate.location);
-    setGpsAccuracy(gpsCandidate.accuracy);
     setGpsCandidate(null);
   }
 
@@ -794,7 +792,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     event.preventDefault();
     if (!db) return setError("Firestore belum siap.");
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
-    if (gpsAccuracy !== null && gpsAccuracy > 100) return setError("Akurasi GPS masih rendah. Ambil lokasi ulang di area terbuka.");
     const form = new FormData(event.currentTarget);
     const documents = [1, 2].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
     if (documents.some((file) => !file || !file.size)) return setError("Dua foto dokumentasi wajib dipilih.");
