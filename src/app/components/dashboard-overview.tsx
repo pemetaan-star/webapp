@@ -46,12 +46,9 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
   useEffect(() => {
     let active = true;
     const container = mapRef.current;
-    let map: LeafletMap | null = null;
     import("leaflet").then((leaflet) => {
-      if (!active || !container || instanceRef.current || points.length === 0 || container.dataset.leafletReady === "true") return;
-      container.dataset.leafletReady = "true";
+      if (!active || !container || !container.isConnected || instanceRef.current || points.length === 0) return;
       const currentMap = leaflet.map(container, { zoomControl: true }).setView([-7.9666, 112.6326], 12);
-      map = currentMap;
       instanceRef.current = currentMap;
       leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(currentMap);
       points.forEach(({ row, lat, lng }) => {
@@ -66,11 +63,11 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
     });
     return () => {
       active = false;
-      if (map) {
-        map.remove();
-        if (instanceRef.current === map) instanceRef.current = null;
+      const currentMap = instanceRef.current;
+      if (currentMap && currentMap.getContainer() === container) {
+        instanceRef.current = null;
+        currentMap.remove();
       }
-      if (container) container.dataset.leafletReady = "false";
     };
   }, [points]);
 
