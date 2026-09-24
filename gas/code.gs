@@ -7,8 +7,9 @@ function doGet(e) {
 
   try {
     const properties = PropertiesService.getScriptProperties();
-    const expectedSecret = properties.getProperty('NEXT_UPLOAD_SECRET') || '';
-    if (!expectedSecret || e.parameter.secret !== expectedSecret) {
+    const expectedSecret = String(properties.getProperty('NEXT_UPLOAD_SECRET') || '').trim().replace(/^['"]|['"]$/g, '');
+    const receivedSecret = String(e.parameter.secret || '').trim().replace(/^['"]|['"]$/g, '');
+    if (!expectedSecret || receivedSecret !== expectedSecret) {
       return jsonResponse({ success: false, message: 'Preview tidak diizinkan.' });
     }
 
@@ -28,10 +29,11 @@ function doPost(e) {
   try {
     const payload = JSON.parse(e.postData && e.postData.contents || '{}');
     const properties = PropertiesService.getScriptProperties();
-    const expectedSecret = properties.getProperty('NEXT_UPLOAD_SECRET') || '';
+    const expectedSecret = String(properties.getProperty('NEXT_UPLOAD_SECRET') || '').trim().replace(/^['"]|['"]$/g, '');
     const folderId = properties.getProperty('FOLDER_UTAMA') || '';
 
-    if (!expectedSecret || payload.secret !== expectedSecret) {
+    const receivedSecret = String(payload.secret || '').trim().replace(/^['"]|['"]$/g, '');
+    if (!expectedSecret || receivedSecret !== expectedSecret) {
       return jsonResponse({ success: false, message: 'Upload tidak diizinkan.' });
     }
     if (!folderId || !payload.fileData || !payload.fileName) {

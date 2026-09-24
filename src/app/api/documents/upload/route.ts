@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const response = await fetch(gasUploadUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, secret: process.env.GAS_UPLOAD_SECRET || "" }),
+      body: JSON.stringify({ ...payload, secret: (process.env.GAS_UPLOAD_SECRET || "").trim().replace(/^['"]|['"]$/g, "") }),
     });
     const result = await response.json();
     return NextResponse.json(result, { status: response.ok && result.success ? 200 : 400 });
