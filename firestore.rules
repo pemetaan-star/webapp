@@ -27,8 +27,8 @@ service cloud.firestore {
 
     function validWorkflowStage(stage) {
       return isAdmin()
-        || (isSupervisor() && stage == 'supervisor_review')
-        || (isCoordinator() && stage in ['coordinator_review', 'needs_revision'])
+        || (isSupervisor() && stage in ['supervisor_review', 'needs_revision'])
+        || (isCoordinator() && stage in ['coordinator_review', 'analyst_review', 'needs_revision'])
         || (isAnalyst() && stage in ['analyst_review', 'finalized', 'needs_revision']);
     }
 

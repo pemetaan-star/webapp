@@ -392,21 +392,26 @@ export default function Home() {
       : payload.status === "Valid"
         ? (isAnalyst || roleKey === "admin" ? "finalized" : "analyst_review")
         : (isCoordinator ? "coordinator_review" : "analyst_review");
-    await updateDoc(doc(db, "submissions", selectedHotspot.id), {
-      qcStatus: payload.status === "Valid" ? "valid" : payload.status === "Perlu perbaikan" ? "perlu_perbaikan" : "pending",
-      qcKelengkapan: payload.kelengkapan,
-      qcDuplikasi: payload.duplikasi,
-      qcKroscek: payload.kroscek,
-      qcNote: payload.note,
-      qcNamaPemeriksa: payload.pemeriksa,
-      qcTanggalPemeriksaan: payload.tanggal,
-      ...(approvalDocument ? { qcDokumenPersetujuan: approvalDocument } : {}),
-      qcReviewerUid: authUser?.uid || "",
-      qcReviewedAt: new Date().toISOString(),
-      workflowStage,
-      workflowUpdatedByRole: userProfile?.role || "",
-      workflowHistory: arrayUnion({ stage: workflowStage, role: userProfile?.role || "", uid: authUser?.uid || "", at: new Date().toISOString(), note: payload.note }),
-    });
+    try {
+      await updateDoc(doc(db, "submissions", selectedHotspot.id), {
+        qcStatus: payload.status === "Valid" ? "valid" : payload.status === "Perlu perbaikan" ? "perlu_perbaikan" : "pending",
+        qcKelengkapan: payload.kelengkapan,
+        qcDuplikasi: payload.duplikasi,
+        qcKroscek: payload.kroscek,
+        qcNote: payload.note,
+        qcNamaPemeriksa: payload.pemeriksa,
+        qcTanggalPemeriksaan: payload.tanggal,
+        ...(approvalDocument ? { qcDokumenPersetujuan: approvalDocument } : {}),
+        qcReviewerUid: authUser?.uid || "",
+        qcReviewedAt: new Date().toISOString(),
+        workflowStage,
+        workflowUpdatedByRole: userProfile?.role || "",
+        workflowHistory: arrayUnion({ stage: workflowStage, role: userProfile?.role || "", uid: authUser?.uid || "", at: new Date().toISOString(), note: payload.note }),
+      });
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      throw new Error(code === "permission-denied" ? "Simpan QC ditolak oleh Firestore Rules. Pastikan role reviewer dan workflow stage sudah sesuai." : "Hasil QC gagal disimpan ke Firestore.");
+    }
     setHotspotRows((rows) => rows.map((row) => row.id === selectedHotspot.id ? { ...row, qc: payload.status } : row));
     setShowQcModal(false);
     setSelectedHotspot(null);
