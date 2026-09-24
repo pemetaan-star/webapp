@@ -753,12 +753,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
     if (!form) return;
     form.setAttribute("aria-busy", String(saving));
-    const organizationSelect = form.querySelector<HTMLSelectElement>('select[name="organisasi"]');
-    const organizationValue = normalizeOrganization(profile?.organisasi);
-    if (organizationSelect && organizationValue) {
-      organizationSelect.value = organizationValue;
-      organizationSelect.dataset.profileOrganization = "true";
-    }
     let loading = form.querySelector<HTMLElement>(".form-saving-indicator");
     if (saving && !loading) {
       loading = document.createElement("div");
@@ -769,7 +763,17 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
       loading.remove();
     }
     return () => loading?.remove();
-  }, [profile?.organisasi, saving]);
+  }, [saving]);
+
+  useEffect(() => {
+    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    const organizationSelect = form?.querySelector<HTMLSelectElement>('select[name="organisasi"]');
+    const organizationValue = normalizeOrganization(profile?.organisasi);
+    if (organizationSelect && organizationValue) {
+      organizationSelect.value = organizationValue;
+      organizationSelect.dataset.profileOrganization = "true";
+    }
+  }, [profile?.organisasi]);
 
   useEffect(() => {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
