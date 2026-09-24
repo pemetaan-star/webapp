@@ -102,7 +102,7 @@ const malangKelurahan: Record<string, string[]> = {
   Kedungkandang: ["Arjowinangun", "Bumiayu", "Buring", "Cemorokandang", "Kedungkandang", "Kotalama", "Lesanpuro", "Madyopuro", "Mergosono", "Sawojajar", "Tlogowaru", "Wonokoyo"],
   Klojen: ["Bareng", "Gadingkasri", "Kasin", "Kauman", "Kiduldalem", "Klojen", "Oro-Oro Dowo", "Penanggungan", "Rampal Celaket", "Samaan", "Sukoharjo"],
   Lowokwaru: ["Dinoyo", "Jatimulyo", "Ketawanggede", "Lowokwaru", "Merjosari", "Mojolangu", "Sumbersari", "Tasikmadu", "Tlogomas", "Tulusrejo", "Tunjungsekar"],
-  Sukun: ["Bakalan Krajan", "Bandulan", "Banyurip", "Bandungrejosari", "Ciptomulyo", "Gadang", "Karangbesuki", "Kebonsari", "Mulyorejo", "Pisangcandi", "Sukun", "Tanjungrejo"],
+  Sukun: ["Bakalan Krajan", "Bandulan", "Bandungrejosari", "Ciptomulyo", "Gadang", "Karangbesuki", "Kebonsari", "Mulyorejo", "Pisangcandi", "Sukun", "Tanjungrejo"],
 };
 
 async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<DocumentData>[] }, firestore: NonNullable<typeof db>) {
