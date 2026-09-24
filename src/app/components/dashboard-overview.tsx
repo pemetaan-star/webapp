@@ -13,7 +13,7 @@ type OverviewRow = {
   coordinates?: string;
 };
 
-export function DashboardOverview({ rows }: { rows: OverviewRow[] }) {
+export function DashboardOverview({ rows, canLoadMore = true }: { rows: OverviewRow[]; canLoadMore?: boolean }) {
   const areaCounts = rows.reduce<Record<string, number>>((counts, row) => {
     const area = row.area.split("/")[0].trim() || "Lainnya";
     counts[area] = (counts[area] || 0) + 1;
@@ -32,7 +32,7 @@ export function DashboardOverview({ rows }: { rows: OverviewRow[] }) {
     return Number.isFinite(latitude) && Number.isFinite(longitude);
   }).length;
 
-  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} dari ${rows.length} data memiliki koordinat`} tag="REAL DATA" /><RealLeafletMap rows={rows} /></article><article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Dihitung dari data Firestore" /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Risiko Otomatis" subtitle="Ringkasan status yang dihitung dari data aktual" tag="REAL DATA" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article>{rows.length >= 25 && <button type="button" className="button button-secondary" onClick={() => window.dispatchEvent(new Event("load-more-submissions"))}>Muat data berikutnya</button>}</section>;
+  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} dari ${rows.length} data memiliki koordinat`} tag="REAL DATA" /><RealLeafletMap rows={rows} /></article><article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Dihitung dari data Firestore" /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Risiko Otomatis" subtitle="Ringkasan status yang dihitung dari data aktual" tag="REAL DATA" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article>{canLoadMore && rows.length >= 25 && <button type="button" className="button button-secondary" onClick={() => window.dispatchEvent(new Event("load-more-submissions"))}>Muat data berikutnya</button>}</section>;
 }
 
 function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
