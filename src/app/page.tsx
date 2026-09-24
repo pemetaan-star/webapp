@@ -726,6 +726,57 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     return () => loading?.remove();
   }, [saving]);
 
+  useEffect(() => {
+    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    if (!form || form.dataset.visitPicker) return;
+    form.dataset.visitPicker = "true";
+    const picker = document.createElement("div");
+    picker.className = "visit-picker form-wide";
+    picker.innerHTML = '<label>Jenis pendataan<select name="visitMode"><option value="initial">Hotspot baru</option><option value="follow_up">Kunjungan ulang</option></select></label><label class="follow-up-hotspot" hidden>Pilih hotspot<select name="previousHotspotId"><option value="">Pilih hotspot yang dikunjungi ulang</option></select></label>';
+    form.insertBefore(picker, form.querySelector(".form-section-title"));
+    const modeSelect = picker.querySelector<HTMLSelectElement>('select[name="visitMode"]')!;
+    const hotspotSelect = picker.querySelector<HTMLSelectElement>('select[name="previousHotspotId"]')!;
+    const hotspotLabel = picker.querySelector<HTMLElement>(".follow-up-hotspot")!;
+    existingHotspots.forEach((hotspot) => {
+      const option = document.createElement("option");
+      option.value = hotspot.id;
+      option.textContent = `${hotspot.hotspotCode || "Tanpa kode"} - ${hotspot.name}`;
+      hotspotSelect.appendChild(option);
+    });
+    const setField = (name: string, value: string) => {
+      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+      if (!field) return;
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")?.set;
+      setter?.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const syncMode = () => {
+      const followUp = modeSelect.value === "follow_up";
+      hotspotLabel.hidden = !followUp;
+      hotspotSelect.required = followUp;
+      if (!followUp) hotspotSelect.value = "";
+    };
+    const selectHotspot = () => {
+      const hotspot = existingHotspots.find((item) => item.id === hotspotSelect.value);
+      if (!hotspot) return;
+      setField("kodeHotspot", hotspot.hotspotCode || "");
+      setField("namaHotspot", hotspot.name);
+      const [kecamatan, kelurahan] = hotspot.area.split("/").map((part) => part.trim());
+      setField("kecamatan", kecamatan || "");
+      setField("kelurahan", kelurahan || "");
+      setField("alamat", hotspot.address || "");
+    };
+    modeSelect.addEventListener("change", syncMode);
+    hotspotSelect.addEventListener("change", selectHotspot);
+    syncMode();
+    return () => {
+      modeSelect.removeEventListener("change", syncMode);
+      hotspotSelect.removeEventListener("change", selectHotspot);
+      picker.remove();
+    };
+  }, [existingHotspots]);
+
   return <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={hotspotCode} setHotspotCode={setHotspotCode} locationSubtypes={locationSubtypes} />;
 
   function startGpsCapture() {
