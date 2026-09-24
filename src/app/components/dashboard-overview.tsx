@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import type { Map as LeafletMap } from "leaflet";
+import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import { PanelHeading, Risk } from "@/app/components/dashboard";
 
 type OverviewRow = {
@@ -38,6 +38,7 @@ export function DashboardOverview({ rows, canLoadMore = true }: { rows: Overview
 function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<LeafletMap | null>(null);
+  const layerRef = useRef<LayerGroup | null>(null);
   const points = useMemo(() => rows.map((row) => {
     const [lat, lng] = (row.coordinates || "").split(/[\s,]+/).map(Number);
     return Number.isFinite(lat) && Number.isFinite(lng) ? { row, lat, lng } : null;
@@ -47,22 +48,15 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
     let active = true;
     const container = mapRef.current;
     import("leaflet").then((leaflet) => {
-      if (!active || !container || !container.isConnected || instanceRef.current || points.length === 0) return;
+      if (!active || !container || !container.isConnected || instanceRef.current) return;
       try {
         const currentMap = leaflet.map(container, { zoomControl: true }).setView([-7.9666, 112.6326], 12);
         instanceRef.current = currentMap;
+        layerRef.current = leaflet.layerGroup().addTo(currentMap);
         leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(currentMap);
-        points.forEach(({ row, lat, lng }) => {
-          const popup = document.createElement("div");
-          const name = document.createElement("strong");
-          name.textContent = row.name;
-          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status QC: ${row.qc}`));
-          leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).addTo(currentMap).bindPopup(popup);
-        });
-        if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
-        if (points.length > 1) currentMap.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
       } catch {
         instanceRef.current = null;
+        layerRef.current = null;
         if (container.isConnected) container.replaceChildren();
       }
     });
@@ -71,6 +65,7 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
       const currentMap = instanceRef.current;
       if (currentMap && currentMap.getContainer() === container) {
         instanceRef.current = null;
+        layerRef.current = null;
         try {
           currentMap.remove();
         } catch {
@@ -78,6 +73,30 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
         }
       }
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    import("leaflet").then((leaflet) => {
+      const currentMap = instanceRef.current;
+      const layer = layerRef.current;
+      if (!active || !currentMap || !layer) return;
+      try {
+        layer.clearLayers();
+        points.forEach(({ row, lat, lng }) => {
+          const popup = document.createElement("div");
+          const name = document.createElement("strong");
+          name.textContent = row.name;
+          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status QC: ${row.qc}`));
+          leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).bindPopup(popup).addTo(layer);
+        });
+        if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
+        if (points.length > 1) currentMap.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
+      } catch {
+        if (currentMap.getContainer().isConnected) layer.clearLayers();
+      }
+    });
+    return () => { active = false; };
   }, [points]);
 
   return <div className="leaflet-map-wrap"><div ref={mapRef} className="leaflet-map" />{points.length === 0 && <div className="real-empty">Belum ada koordinat GPS pada data Firestore.</div>}</div>;
