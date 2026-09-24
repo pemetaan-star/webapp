@@ -275,9 +275,34 @@ export default function Home() {
   useEffect(() => {
     document.querySelectorAll<HTMLElement>("label, .detail-item small").forEach((element) => {
       if (element.textContent?.trim() === "Keterangan Aktivitas" || element.textContent?.trim() === "Keterangan aktivitas") {
-        element.textContent = "Keterangan Informan";
+        const textNode = Array.from(element.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+        if (textNode) textNode.textContent = "Keterangan Informan";
       }
     });
+    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    const firstPhoto = form?.querySelector<HTMLInputElement>('input[name="document"]');
+    if (form && firstPhoto && !form.dataset.photoCount) {
+      form.dataset.photoCount = "3";
+      firstPhoto.required = true;
+      const firstLabel = firstPhoto.closest("label");
+      if (firstLabel) {
+        const firstText = Array.from(firstLabel.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+        if (firstText) firstText.textContent = "Foto Dokumentasi 1";
+      }
+      [2, 3].forEach((number) => {
+        const label = document.createElement("label");
+        label.className = "form-wide";
+        label.textContent = `Foto Dokumentasi ${number}`;
+        const input = document.createElement("input");
+        input.name = `document${number}`;
+        input.type = "file";
+        input.accept = "image/*";
+        input.setAttribute("capture", "environment");
+        input.required = true;
+        label.appendChild(input);
+        form.insertBefore(label, form.querySelector("button[type=submit]")?.parentElement || null);
+      });
+    }
   }, [selectedHotspot, showEnumeratorForm]);
 
   async function handleLogout() {
@@ -704,22 +729,25 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
     if (gpsAccuracy !== null && gpsAccuracy > 100) return setError("Akurasi GPS masih rendah. Ambil lokasi ulang di area terbuka.");
     const form = new FormData(event.currentTarget);
-    const document = form.get("document") as File;
-    if (!document || !document.size) return setError("Dokumen dokumentasi wajib dipilih.");
+    const documents = [1, 2, 3].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
+    if (documents.some((file) => !file || !file.size)) return setError("Tiga foto dokumentasi wajib dipilih.");
     if (!gps) return setError("Titik koordinat GPS wajib diambil dari perangkat.");
     const educated = Number(form.get("jumlahDiedukasi") || 0);
     setSaving(true);
     setError("");
     try {
       submissionIdempotencyKey.current ||= crypto.randomUUID();
-      const fileData = await toBase64(document);
-      const uploadResponse = await fetch("/api/documents/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileData, fileName: document.name, fileMime: document.type || "application/octet-stream", username: profile?.username || user.email, idempotencyKey: submissionIdempotencyKey.current }),
-      });
-      const uploadResult = await uploadResponse.json();
-      if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.message || "Upload dokumen gagal.");
+      const uploadResults = await Promise.all(documents.map(async (document, index) => {
+        const fileData = await toBase64(document);
+        const uploadResponse = await fetch("/api/documents/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileData, fileName: document.name, fileMime: document.type || "application/octet-stream", username: profile?.username || user.email, idempotencyKey: `${submissionIdempotencyKey.current}-${index + 1}` }),
+        });
+        const uploadResult = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.message || `Upload foto ${index + 1} gagal.`);
+        return uploadResult;
+      }));
       const normalizedHotspotCode = String(form.get("kodeHotspot") || "").trim().toUpperCase();
       const relatedVisits = existingHotspots.filter((hotspot) => hotspot.hotspotCode?.trim().toUpperCase() === normalizedHotspotCode);
       const previousVisit = relatedVisits[0];
@@ -755,7 +783,8 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         noHpInforman: String(form.get("noHpInforman") || "").trim(),
         keteranganAktivitas: String(form.get("keteranganAktivitas") || "").trim(),
         kondisiSaatPemetaan: String(form.get("kondisiSaatPemetaan") || "").trim(),
-        document: { name: uploadResult.fileName, fileId: uploadResult.fileId, url: uploadResult.fileUrl, idempotencyKey: submissionIdempotencyKey.current },
+        document: { name: uploadResults[0].fileName, fileId: uploadResults[0].fileId, url: uploadResults[0].fileUrl, idempotencyKey: `${submissionIdempotencyKey.current}-1` },
+        documents: uploadResults.map((uploadResult, index) => ({ name: uploadResult.fileName, fileId: uploadResult.fileId, url: uploadResult.fileUrl, idempotencyKey: `${submissionIdempotencyKey.current}-${index + 1}` })),
         qcStatus: "pending",
         workflowStage: "submitted",
         createdAt: new Date().toISOString(),
