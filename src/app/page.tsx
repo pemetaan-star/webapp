@@ -726,7 +726,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (saving && !loading) {
       loading = document.createElement("div");
       loading.className = "form-saving-indicator";
-      loading.innerHTML = '<span class="form-saving-spinner" aria-hidden="true"></span><strong>Mengirim data...</strong><small>Foto sedang diunggah dan data sedang disimpan.</small>';
+      loading.innerHTML = '<span class="form-saving-brand" aria-hidden="true"></span><strong>Mengirim data...</strong><small>Foto sedang diunggah dan data sedang disimpan.</small><i class="form-saving-track" aria-hidden="true"></i>';
       form.appendChild(loading);
     } else if (!saving && loading) {
       loading.remove();

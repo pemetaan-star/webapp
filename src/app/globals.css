@@ -21,8 +21,9 @@
 .form-saving-indicator strong, .form-saving-indicator small { grid-column: 2; }
 .form-saving-indicator strong { font-size: .78rem; }
 .form-saving-indicator small { color: var(--muted); font-size: .68rem; }
-.form-saving-spinner { grid-row: 1 / span 2; width: 18px; height: 18px; border: 2px solid #b9ddd8; border-top-color: var(--teal); border-radius: 50%; animation: form-saving-spin .8s linear infinite; }
-@keyframes form-saving-spin { to { transform: rotate(360deg); } }
+.form-saving-brand { grid-row: 1 / span 2; display: block; width: 34px; height: 34px; border-radius: 10px; background: white url('/lingga-indonesia-icon.svg') center / 30px 30px no-repeat; box-shadow: 0 5px 14px #19314f26; animation: loading-brand-spin 1.4s linear infinite; }
+.form-saving-track { grid-column: 2; display: block; width: 100%; height: 4px; margin-top: 5px; overflow: hidden; border-radius: 99px; background: #b9ddd8; }
+.form-saving-track::after { display: block; width: 42%; height: 100%; content: ''; border-radius: inherit; background: linear-gradient(90deg, #0f9f94, var(--coral)); animation: loading-progress 1.35s ease-in-out infinite; }
 .enumerator-form label:has(input[name="jumlahTesHiv"]), .enumerator-form label:has(input[name="jumlahHivPositif"]), .kpi-grid .kpi-card:nth-child(4), .review-detail-grid .detail-item:nth-child(7), .detail-grid .detail-item:nth-child(12) { display: none; }
 .checkbox-grid { display: flex; flex-wrap: wrap; gap: 10px 16px; min-height: 42px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .checkbox-grid label { color: var(--muted); font-size: .76rem; font-weight: 500; }
