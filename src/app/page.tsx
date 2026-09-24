@@ -285,9 +285,12 @@ export default function Home() {
       form.dataset.photoCount = "3";
       firstPhoto.required = true;
       const firstLabel = firstPhoto.closest("label");
+      const formActions = form.querySelector<HTMLElement>(".user-modal-actions");
       if (firstLabel) {
+        firstLabel.className = "form-wide";
         const firstText = Array.from(firstLabel.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
         if (firstText) firstText.textContent = "Foto Dokumentasi 1";
+        form.insertBefore(firstLabel, formActions);
       }
       [2, 3].forEach((number) => {
         const label = document.createElement("label");
@@ -300,7 +303,7 @@ export default function Home() {
         input.setAttribute("capture", "environment");
         input.required = true;
         label.appendChild(input);
-        form.insertBefore(label, form.querySelector("button[type=submit]")?.parentElement || null);
+        form.insertBefore(label, formActions);
       });
     }
   }, [selectedHotspot, showEnumeratorForm]);
