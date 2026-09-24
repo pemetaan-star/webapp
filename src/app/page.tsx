@@ -733,12 +733,15 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
 
   useEffect(() => {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
-    if (!form || form.dataset.visitPicker) return;
+    if (!form) return;
+    form.querySelector(".visit-picker")?.remove();
     form.dataset.visitPicker = "true";
     const picker = document.createElement("div");
     picker.className = "visit-picker form-wide";
     picker.innerHTML = '<label>Jenis pendataan<select name="visitMode"><option value="initial">Hotspot baru</option><option value="follow_up">Kunjungan ulang</option></select></label><label class="follow-up-hotspot" hidden>Pilih hotspot<select name="previousHotspotId"><option value="">Pilih hotspot yang dikunjungi ulang</option></select></label>';
-    form.insertBefore(picker, form.querySelector(".form-section-title"));
+    window.requestAnimationFrame(() => {
+      if (form.isConnected) form.insertBefore(picker, form.querySelector(".form-section-title"));
+    });
     const modeSelect = picker.querySelector<HTMLSelectElement>('select[name="visitMode"]')!;
     const hotspotSelect = picker.querySelector<HTMLSelectElement>('select[name="previousHotspotId"]')!;
     const hotspotLabel = picker.querySelector<HTMLElement>(".follow-up-hotspot")!;
