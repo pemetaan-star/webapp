@@ -199,11 +199,17 @@ export default function Home() {
           const profileByEmail = await getDocs(profileQuery);
           const profile = profileByEmail.docs[0];
           setUserProfile(profile ? normalizeUserProfile(profile.id, profile.data()) : null);
+          if (profile && profile.id !== user.uid) {
+            setDataError("Profil ditemukan berdasarkan email, tetapi ID dokumen harus sama dengan UID Firebase agar dashboard dapat membaca submissions.");
+          }
         } else {
           setUserProfile(null);
+          setDataLoading(false);
+          setDataError("Profil user belum ditemukan. Buat dokumen user dengan ID UID Firebase dan field role.");
         }
       } else {
         setUserProfile(null);
+        setDataLoading(false);
       }
       setAuthReady(true);
     });

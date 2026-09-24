@@ -38,11 +38,7 @@ service cloud.firestore {
 
     function validCounts(data) {
       return data.estimasiJumlahPopulasi is int && data.estimasiJumlahPopulasi >= 0
-        && data.jumlahDiedukasi is int && data.jumlahDiedukasi >= 0
-        && data.jumlahTesHiv is int && data.jumlahTesHiv >= 0
-        && data.jumlahHivPositif is int && data.jumlahHivPositif >= 0
-        && data.jumlahTesHiv <= data.jumlahDiedukasi
-        && data.jumlahHivPositif <= data.jumlahTesHiv;
+        && data.jumlahDiedukasi is int && data.jumlahDiedukasi >= 0;
     }
 
     function validSubmission(data) {
