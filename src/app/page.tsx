@@ -1,15 +1,15 @@
 "use client";
 
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import type { Map as LeafletMap } from "leaflet";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { Kpi, PanelHeading, Risk } from "@/app/components/dashboard";
-import { EnumeratorFormFields } from "@/app/components/enumerator-form";
+import { EnumeratorFormFields, organizationOptions } from "@/app/components/enumerator-form";
 import { DashboardOverview } from "@/app/components/dashboard-overview";
-import { ReviewDetailModal, ReviewQcModal } from "@/app/components/review-modals";
+import { ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
 
 type Hotspot = {
   id: string;
@@ -71,7 +71,7 @@ function normalizeOrganization(value?: string) {
 
 function normalizeUserProfile(id: string, data: Record<string, unknown>) {
   const profile = { id, ...data } as UserProfile;
-  const name = profile.name?.trim() || "Nama belum diatur";
+  const name = profile.nama?.trim() || profile.name?.trim() || "Nama belum diatur";
   return { ...profile, name, nama: name };
 }
 
@@ -179,6 +179,7 @@ export default function Home() {
   const [userManagementLoading, setUserManagementLoading] = useState(false);
   const [userManagementError, setUserManagementError] = useState("");
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [showEnumeratorForm, setShowEnumeratorForm] = useState(false);
   const [showSupervisionForm, setShowSupervisionForm] = useState(false);
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
@@ -300,6 +301,8 @@ export default function Home() {
       }
     });
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    const organizationSelect = form?.querySelector<HTMLSelectElement>('select[name="organisasi"]');
+    if (organizationSelect) organizationSelect.value = userProfile?.organisasi || "";
     const firstPhoto = form?.querySelector<HTMLInputElement>('input[name="document"]');
     if (form && firstPhoto && !form.dataset.photoCount) {
       form.dataset.photoCount = "3";
@@ -345,7 +348,7 @@ export default function Home() {
       subtypeSelect.addEventListener("change", syncOtherLocation);
       return () => subtypeSelect.removeEventListener("change", syncOtherLocation);
     }
-  }, [selectedHotspot, showEnumeratorForm]);
+  }, [selectedHotspot, showEnumeratorForm, userProfile]);
 
   useEffect(() => {
     if (!showEnumeratorForm) return;
@@ -387,6 +390,19 @@ export default function Home() {
 
   async function handleLogout() {
     if (auth) await signOut(auth);
+  }
+
+  async function reviewQcWithAi(submissionId: string): Promise<AiQcSuggestion> {
+    if (!authUser) throw new Error("Sesi login tidak ditemukan.");
+    const token = await authUser.getIdToken();
+    const response = await fetch("/api/qc/ai-review", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ submissionId }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "AI gagal meninjau data.");
+    return result.suggestion as AiQcSuggestion;
   }
 
   async function saveQcStatus(payload: { status: Hotspot["qc"]; note: string; kelengkapan: string; duplikasi: string; kroscek: string; pemeriksa: string; tanggal: string; document?: File }) {
@@ -431,15 +447,18 @@ export default function Home() {
   }
 
   async function openUserManagement() {
-    if (userProfile?.role?.toLowerCase() !== "admin" || !db) return;
+    if (userProfile?.role?.toLowerCase() !== "admin" || !authUser) return;
     setShowUserManagement(true);
     setUserManagementLoading(true);
     setUserManagementError("");
     try {
-      const snapshot = await getDocs(collection(db, "user"));
-      setManagedUsers(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as UserProfile));
-    } catch {
-      setUserManagementError("Daftar user tidak dapat dimuat. Periksa Firestore Rules.");
+      const token = await authUser.getIdToken();
+      const response = await fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Daftar user tidak dapat dimuat.");
+      setManagedUsers((result.users as UserProfile[]).map((user) => normalizeUserProfile(user.id || "", user)));
+    } catch (error) {
+      setUserManagementError(error instanceof Error ? error.message : "Daftar user tidak dapat dimuat.");
     } finally {
       setUserManagementLoading(false);
     }
@@ -447,36 +466,75 @@ export default function Home() {
 
   async function saveUserProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!db || !editingUser?.id) return;
+    if (!authUser || !editingUser?.id) return;
     const formData = new FormData(event.currentTarget);
+    const profile = {
+      username: String(formData.get("username") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      nama: String(formData.get("nama") || "").trim(),
+      role: String(formData.get("role") || "enumerator").trim(),
+      organisasi: String(formData.get("organisasi") || "").trim(),
+    };
     try {
-      await updateDoc(doc(db, "user", editingUser.id), {
-        username: String(formData.get("username") || "").trim(),
-        email: String(formData.get("email") || "").trim(),
-        name: String(formData.get("name") || formData.get("nama") || "").trim(),
-        role: String(formData.get("role") || "enumerator").trim(),
+      const token = await authUser.getIdToken();
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: editingUser.id, ...profile }),
       });
-      setManagedUsers((users) => users.map((user) => user.id === editingUser.id ? {
-        ...user,
-        username: String(formData.get("username") || "").trim(),
-        email: String(formData.get("email") || "").trim(),
-        name: String(formData.get("name") || formData.get("nama") || "").trim(),
-        role: String(formData.get("role") || "enumerator").trim(),
-      } : user));
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Profil user gagal disimpan.");
+      setManagedUsers((users) => users.map((user) => user.id === editingUser.id ? { ...user, ...profile } : user));
       setEditingUser(null);
-    } catch {
-      setUserManagementError("Profil user gagal disimpan.");
+    } catch (error) {
+      setUserManagementError(error instanceof Error ? error.message : "Profil user gagal disimpan.");
+    }
+  }
+
+  async function createUserProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!authUser) return;
+    const formData = new FormData(event.currentTarget);
+    const profile = {
+      username: String(formData.get("username") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      nama: String(formData.get("nama") || "").trim(),
+      role: String(formData.get("role") || "enumerator").trim(),
+      organisasi: String(formData.get("organisasi") || "").trim(),
+      password: String(formData.get("password") || ""),
+    };
+    try {
+      const token = await authUser.getIdToken();
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Akun user gagal dibuat.");
+      setManagedUsers((users) => [...users, normalizeUserProfile(result.user.id, result.user)]);
+      setCreatingUser(false);
+      setUserManagementError("");
+    } catch (error) {
+      setUserManagementError(error instanceof Error ? error.message : "Akun user gagal dibuat.");
     }
   }
 
   async function removeUserProfile(user: UserProfile) {
-    if (!db || !user.id || user.id === authUser?.uid || user.id === userProfile?.id) return;
+    if (!authUser || !user.id || user.id === authUser.uid || user.id === userProfile?.id) return;
     if (!window.confirm(`Hapus profil ${user.nama || user.username || "user ini"}?`)) return;
     try {
-      await deleteDoc(doc(db, "user", user.id));
+      const token = await authUser.getIdToken();
+      const response = await fetch("/api/admin/users", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: user.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Profil user gagal dihapus.");
       setManagedUsers((users) => users.filter((item) => item.id !== user.id));
-    } catch {
-      setUserManagementError("Profil user gagal dihapus.");
+    } catch (error) {
+      setUserManagementError(error instanceof Error ? error.message : "Profil user gagal dihapus.");
     }
   }
 
@@ -495,11 +553,11 @@ export default function Home() {
         <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Quality Control"} subtitle={isEnumerator ? "Pantau status validasi dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau melakukan validasi analis"} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status QC"><option>Semua</option><option>Valid</option><option>Pending</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS FISIK</th><th>STATUS VALIDASI QC</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{hotspot.qc}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button></td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data Firestore..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data <button className="button button-link">Lihat semua data →</button></div></section>
         <DashboardOverview rows={hotspotRows} canLoadMore={submissionCursor !== null} />
       </main>
-      {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); }} onEdit={setEditingUser} onSave={saveUserProfile} onDelete={removeUserProfile} />}
+      {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}
       {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} existingHotspots={hotspotRows} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); }} />}
       {canSupervise && authUser && <SupervisorForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={() => { setShowSupervisionForm(false); setLastUpdated("sekarang"); }} />}
       {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={isReviewer} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
-      {selectedHotspot && showQcModal && <ReviewQcModal hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} />}
+      {selectedHotspot && showQcModal && <ReviewQcModal key={`${selectedHotspot.id}-${authUser?.uid || ""}`} hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} onAiReview={reviewQcWithAi} reviewerName={userProfile?.nama || userProfile?.name || authUser?.displayName || authUser?.email?.split("@")[0] || ""} />}
     </div>
   );
 }
@@ -606,8 +664,82 @@ function QcModal({ hotspot, onClose, onSave }: { hotspot: Hotspot; onClose: () =
   return <div className="user-modal-backdrop"><section className="user-modal qc-modal" role="dialog" aria-modal="true"><div className="user-modal-header"><div><p className="eyebrow">Quality control</p><h2>Review Data Hotspot</h2><p>{hotspot.name} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="qc-detail-grid"><div><small>ID Data</small><strong>{hotspot.id}</strong></div><div><small>Status fisik</small><strong>{hotspot.status}</strong></div><div><small>Populasi kunci</small><strong>{hotspot.population}</strong></div><div><small>Koordinat</small><strong>{hotspot.coordinates || "-"}</strong></div></div><form onSubmit={submit} className="qc-form"><label>Pemeriksaan kelengkapan<select value={kelengkapan} onChange={(event) => setKelengkapan(event.target.value)}><option value="lengkap">Lengkap &amp; Sesuai Standar</option><option value="perlu_perbaikan">Perlu Perbaikan / Isian Belum Lengkap</option></select></label><label>Indikasi duplikasi<select value={duplikasi} onChange={(event) => setDuplikasi(event.target.value)}><option value="tidak_ada">Tidak Ada Indikasi Duplikasi</option><option value="ada">Ada Indikasi Duplikasi</option></select></label><label>Kroscek antar enumerator<select value={kroscek} onChange={(event) => setKroscek(event.target.value)}><option value="sesuai">Sesuai Hasil Kroscek</option><option value="perlu_klarifikasi">Perlu Klarifikasi Ulang</option></select></label><label>Status data akhir<select value={status} onChange={(event) => setStatus(event.target.value as Hotspot["qc"])}><option value="Valid">Valid - Masuk Database Utama</option><option value="Pending">Perlu Tindak Lanjut</option><option value="Perlu perbaikan">Tidak Valid - Perlu Perbaikan</option></select></label><label>Catatan analis<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} /></label><label>Dokumentasi persetujuan QC<input type="file" accept="image/*,.pdf,.doc,.docx" onChange={(event) => setDocument(event.target.files?.[0])} /></label><div className="qc-form-grid"><label>Nama pemeriksa<input value={pemeriksa} onChange={(event) => setPemeriksa(event.target.value)} required /></label><label>Tanggal pemeriksaan<input type="date" value={tanggal} onChange={(event) => setTanggal(event.target.value)} required /></label></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan hasil QC"}</button></div></form></section></div>;
 }
 /* eslint-enable @typescript-eslint/no-unused-vars */
-function UserManagementModal({ users, loading, error, editingUser, onClose, onEdit, onSave, onDelete }: { users: UserProfile[]; loading: boolean; error: string; editingUser: UserProfile | null; onClose: () => void; onEdit: (user: UserProfile) => void; onSave: (event: React.FormEvent<HTMLFormElement>) => void; onDelete: (user: UserProfile) => void }) {
-  return <div className="user-modal-backdrop" role="presentation"><section className="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-management-title"><div className="user-modal-header"><div><p className="eyebrow">Admin control</p><h2 id="user-management-title">Manajemen User</h2><p>Kelola profil, username, email, dan role pengguna.</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div>{error && <p className="login-error user-modal-error">{error}</p>}{editingUser ? <form className="user-edit-form" onSubmit={onSave}><label>Username<input name="username" defaultValue={editingUser.username || ""} required /></label><label>Email Firebase<input name="email" type="email" defaultValue={editingUser.email || ""} required /></label><label>Nama<input name="nama" defaultValue={editingUser.nama || ""} required /></label><label>Role<select name="role" defaultValue={editingUser.role || "enumerator"}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="supervisor">Supervisor</option><option value="enumerator">Enumerator</option></select></label><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={() => onEdit(null as unknown as UserProfile)}>Batal</button><button type="submit" className="button button-primary">Simpan profil</button></div></form> : <div className="user-table-wrap">{loading ? <p className="user-empty">Memuat daftar user...</p> : users.length === 0 ? <p className="user-empty">Belum ada profil user.</p> : <table><thead><tr><th>USERNAME</th><th>NAMA</th><th>EMAIL</th><th>ROLE</th><th>AKSI</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td className="mono">{user.username || "-"}</td><td><strong>{user.nama || "-"}</strong></td><td>{user.email || "-"}</td><td><span className="user-role">{user.role || "-"}</span></td><td><button className="row-action" onClick={() => onEdit(user)} aria-label={`Edit ${user.username || "user"}`}>✎</button><button className="row-action row-action-danger" onClick={() => onDelete(user)} disabled={user.id === undefined} aria-label={`Hapus ${user.username || "user"}`}>×</button></td></tr>)}</tbody></table>}</div>}</section></div>;
+function UserManagementModal({ users, loading, error, editingUser, creatingUser, onClose, onAdd, onCancelEdit, onEdit, onSave, onCreate, onDelete }: { users: UserProfile[]; loading: boolean; error: string; editingUser: UserProfile | null; creatingUser: boolean; onClose: () => void; onAdd: () => void; onCancelEdit: () => void; onEdit: (user: UserProfile | null) => void; onSave: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; onCreate: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; onDelete: (user: UserProfile) => void }) {
+  const [roleOverride, setRoleOverride] = useState<{ userId: string | null; role: string } | null>(null);
+  const [savingUser, setSavingUser] = useState(false);
+  const savingUserRef = useRef(false);
+  const isFormOpen = Boolean(editingUser) || creatingUser;
+  const currentRole = roleOverride?.userId === (editingUser?.id || null)
+    ? roleOverride.role
+    : editingUser?.role || "enumerator";
+
+  async function submitUser(event: React.FormEvent<HTMLFormElement>) {
+    if (savingUserRef.current) {
+      event.preventDefault();
+      return;
+    }
+
+    savingUserRef.current = true;
+    setSavingUser(true);
+    try {
+      await (creatingUser ? onCreate(event) : onSave(event));
+    } finally {
+      savingUserRef.current = false;
+      setSavingUser(false);
+    }
+  }
+
+  return (
+    <div className="user-modal-backdrop" role="presentation">
+      <section className="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-management-title">
+        <div className="user-modal-header">
+          <div>
+            <p className="eyebrow">Admin control</p>
+            <h2 id="user-management-title">Manajemen User</h2>
+            <p>Kelola profil, username, email, dan role pengguna.</p>
+            {!isFormOpen && <button type="button" className="button button-primary" onClick={() => { setRoleOverride(null); onAdd(); }}>＋ Tambah user</button>}
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Tutup" disabled={savingUser}>×</button>
+        </div>
+        {error && <p className="login-error user-modal-error">{error}</p>}
+        {isFormOpen ? (
+          <form className="user-edit-form" onSubmit={submitUser} aria-busy={savingUser}>
+            <label>Username<input name="username" defaultValue={editingUser?.username || ""} required /></label>
+            <label>Email Firebase<input name="email" type="email" defaultValue={editingUser?.email || ""} required /></label>
+            <label>Nama<input name="nama" defaultValue={editingUser?.nama || ""} required /></label>
+            {creatingUser && <label>Password awal<input name="password" type="password" autoComplete="new-password" minLength={6} required /></label>}
+            <label>Role<select name="role" value={currentRole} onChange={(event) => setRoleOverride({ userId: editingUser?.id || null, role: event.target.value })}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="koordinator">Koordinator</option><option value="supervisor">Supervisor</option><option value="enumerator">Enumerator</option></select></label>
+            {(creatingUser || editingUser) && currentRole === "enumerator" && <label>Organisasi Enumerator<select name="organisasi" defaultValue={editingUser?.organisasi || ""} required><option value="">Pilih organisasi</option>{organizationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
+            {savingUser && <div className="form-saving-indicator form-wide" role="status" aria-live="polite"><span className="form-saving-brand" aria-hidden="true" /><strong>Menyimpan user...</strong><small>{creatingUser ? "Membuat akun Firebase dan profil user." : "Memperbarui profil user."}</small><i className="form-saving-track" aria-hidden="true" /></div>}
+            <div className="user-modal-actions">
+              <button type="button" className="button button-secondary" onClick={() => { setRoleOverride(null); onCancelEdit(); }} disabled={savingUser}>Batal</button>
+              <button type="submit" className="button button-primary" disabled={savingUser}>{savingUser ? "Menyimpan..." : creatingUser ? "Buat user" : "Simpan profil"}</button>
+            </div>
+          </form>
+        ) : (
+          <div className="user-table-wrap">
+            {loading ? <p className="user-empty">Memuat daftar user...</p> : users.length === 0 ? <p className="user-empty">Belum ada profil user.</p> : (
+              <table>
+                <thead><tr><th>USERNAME</th><th>NAMA</th><th>EMAIL</th><th>ROLE</th><th>AKSI</th></tr></thead>
+                <tbody>{users.map((user) => (
+                  <tr key={user.id}>
+                    <td className="mono">{user.username || "-"}</td>
+                    <td><strong>{user.nama || "-"}</strong></td>
+                    <td>{user.email || "-"}</td>
+                    <td><span className="user-role">{user.role || "-"}</span></td>
+                    <td>
+                      <button className="row-action" onClick={() => onEdit(user)} aria-label={`Edit ${user.username || "user"}`}>✎</button>
+                      <button className="row-action row-action-danger" onClick={() => onDelete(user)} disabled={user.id === undefined} aria-label={`Hapus ${user.username || "user"}`}>×</button>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function createGpsDialog(onCancel: () => void) {
@@ -735,6 +867,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   const [locationSubtype, setLocationSubtype] = useState("");
   const [statusHotspot, setStatusHotspot] = useState("");
   const [hotspotCode, setHotspotCode] = useState("");
+  const [hotspotCodeLoading, setHotspotCodeLoading] = useState(false);
   const [gps, setGps] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
   const gpsDialogRef = useRef<{ showResult: (result: { latitude: string; longitude: string; accuracy: number }, onAccept: () => void, onRetry: () => void) => void; close: () => void } | null>(null);
@@ -748,6 +881,73 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (gpsTimeoutRef.current !== null) window.clearTimeout(gpsTimeoutRef.current);
     gpsDialogRef.current?.close();
   }, []);
+
+  useEffect(() => {
+    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
+    const codeInput = form?.querySelector<HTMLInputElement>('input[name="kodeHotspot"]');
+    if (!form || !codeInput) return;
+
+    codeInput.readOnly = true;
+    codeInput.placeholder = "Terisi otomatis setelah identitas lokasi lengkap";
+
+    let timer: number | undefined;
+    let requestSequence = 0;
+    let activeRequest: AbortController | null = null;
+
+    const generateCode = (event: Event) => {
+      const field = event.target;
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) return;
+      if (!["namaHotspot", "kelurahan", "alamat"].includes(field.name)) return;
+
+      window.clearTimeout(timer);
+      activeRequest?.abort();
+      const currentRequest = ++requestSequence;
+      setHotspotCode("");
+      setHotspotCodeLoading(false);
+
+      const namaHotspot = String(new FormData(form).get("namaHotspot") || "").trim();
+      const kelurahan = String(new FormData(form).get("kelurahan") || "").trim();
+      const alamat = String(new FormData(form).get("alamat") || "").trim();
+      if (!namaHotspot || !kelurahan || !alamat) return;
+
+      timer = window.setTimeout(async () => {
+        const controller = new AbortController();
+        activeRequest = controller;
+        setHotspotCodeLoading(true);
+        try {
+          const token = await user.getIdToken();
+          const response = await fetch("/api/hotspots/code", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ namaHotspot, kelurahan, alamat }),
+            signal: controller.signal,
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Kode hotspot gagal dibuat.");
+          if (currentRequest === requestSequence) setHotspotCode(String(result.kodeHotspot || ""));
+        } catch (requestError) {
+          if (controller.signal.aborted || currentRequest !== requestSequence) return;
+          setError(requestError instanceof Error ? requestError.message : "Kode hotspot gagal dibuat.");
+        } finally {
+          if (currentRequest === requestSequence) setHotspotCodeLoading(false);
+        }
+      }, 450);
+    };
+
+    form.addEventListener("input", generateCode);
+    form.addEventListener("change", generateCode);
+    return () => {
+      window.clearTimeout(timer);
+      activeRequest?.abort();
+      form.removeEventListener("input", generateCode);
+      form.removeEventListener("change", generateCode);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    const codeInput = document.querySelector<HTMLInputElement>('.enumerator-form input[name="kodeHotspot"]');
+    if (codeInput) codeInput.placeholder = hotspotCodeLoading ? "Membuat kode hotspot..." : "Terisi otomatis setelah identitas lokasi lengkap";
+  }, [hotspotCodeLoading]);
 
   useEffect(() => {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
@@ -769,10 +969,17 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
     const organizationSelect = form?.querySelector<HTMLSelectElement>('select[name="organisasi"]');
     const organizationValue = normalizeOrganization(profile?.organisasi);
-    if (organizationSelect && organizationValue) {
-      organizationSelect.value = organizationValue;
-      organizationSelect.dataset.profileOrganization = "true";
-    }
+    if (!organizationSelect) return;
+    const organizationLabel = organizationOptions.find(([value]) => value === organizationValue)?.[1] || "Organisasi belum diatur";
+    const displayInput = document.createElement("input");
+    displayInput.value = organizationLabel;
+    displayInput.readOnly = true;
+    displayInput.setAttribute("aria-label", "Organisasi / Komunitas Pelaksana");
+    const hiddenInput = document.createElement("input");
+    hiddenInput.type = "hidden";
+    hiddenInput.name = "organisasi";
+    hiddenInput.value = organizationValue;
+    organizationSelect.replaceWith(displayInput, hiddenInput);
   }, [profile?.organisasi]);
 
   useEffect(() => {
@@ -912,6 +1119,9 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     event.preventDefault();
     if (!db) return setError("Firestore belum siap.");
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
+    if (!normalizeOrganization(profile?.organisasi)) return setError("Organisasi pada profil Anda belum diatur. Hubungi admin sebelum mengirim data.");
+    if (hotspotCodeLoading) return setError("Tunggu sampai kode hotspot selesai dibuat.");
+    if (!hotspotCode) return setError("Lengkapi nama hotspot, kelurahan, dan alamat untuk membuat kode hotspot.");
     const form = new FormData(event.currentTarget);
     const allDocuments = [1, 2, 3].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
     if (allDocuments.slice(0, 2).some((file) => !file || !file.size)) return setError("Dua foto dokumentasi wajib dipilih.");

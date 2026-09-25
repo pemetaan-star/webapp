@@ -27,6 +27,7 @@ const organizations = [
   ["wamarapa", "Wamarapa"],
   ["fatayat_nu", "SSR Fatayat NU Jawa Timur (PENASUN)"],
 ];
+export const organizationOptions = organizations;
 
 export function EnumeratorFormFields({ user, profile, error, saving, gps, onUseCurrentLocation, onClose, onSubmit, locationType, setLocationType, locationSubtype, setLocationSubtype, statusHotspot, setStatusHotspot, hotspotCode, setHotspotCode, locationSubtypes }: EnumeratorFormFieldsProps) {
   const availableSubtypes = locationSubtypes[locationType] || [];
