@@ -33,9 +33,9 @@
 .qc-ai-reason p { margin: 4px 0 0; color: var(--muted); }
 .qc-ai-checks { display: grid; gap: 8px; margin: 11px 0 0; padding: 0; list-style: none; }
 .qc-ai-check { padding: 9px 10px; border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; background: white; }
-.qc-ai-check > div { display: flex; justify-content: space-between; gap: 12px; font-size: .7rem; }
+.qc-ai-check > div { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: .7rem; }
 .qc-ai-check span { color: var(--muted); text-transform: capitalize; }
-.qc-ai-check p { margin: 4px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.45; }
+.qc-ai-check p { margin: 4px 0 0; overflow-wrap: anywhere; color: var(--muted); font-size: .68rem; line-height: 1.5; }
 .qc-ai-check-sesuai { border-left-color: var(--teal); }
 .qc-ai-check-perlu_perbaikan { border-left-color: var(--coral); }
 .qc-ai-check-perlu_verifikasi { border-left-color: #d59a28; }

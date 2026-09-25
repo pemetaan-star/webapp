@@ -7,7 +7,7 @@ const qcCriteria = [
   "Pemeriksaan kelengkapan data",
   "Konsistensi pengisian instrumen",
   "Identifikasi duplikasi hotspot",
-  "Validasi lokasi melalui supervisi atau kroscek silang",
+  "Validasi lokasi dari data lapangan dan bukti yang tersedia",
   "Kelayakan finalisasi database",
 ] as const;
 
@@ -27,6 +27,18 @@ const qcSuggestionSchema = z.object({
 
 function normalizeText(value: unknown) {
   return String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function humanizeAiText(value: string) {
+  return value
+    .replaceAll("kandidatDuplikatDenganNamaKelurahanAlamatSama", "jumlah data dengan nama, kelurahan, dan alamat yang sama")
+    .replaceAll("hasilKroscekYangSudahTercatat", "hasil kroscek yang sudah tercatat")
+    .replaceAll("FieldWajibKosong", "field wajib yang belum terisi")
+    .replaceAll("formatKoordinatValid", "format koordinat")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .trim();
 }
 
 export async function POST(request: Request) {
@@ -78,9 +90,7 @@ export async function POST(request: Request) {
       && normalizeText(candidate.get("kelurahan")) === normalizeText(data.kelurahan)
       && normalizeText(candidate.get("alamat")) === normalizeText(data.alamat),
     ).length;
-    const workflowHistory = Array.isArray(data.workflowHistory) ? data.workflowHistory : [];
-    const supervisorReviewRecorded = workflowHistory.some((item) => item?.stage === "supervisor_review");
-    const crossCheckRecorded = String(data.qcKroscek || "") === "sesuai";
+    const crossCheckResult = String(data.qcKroscek || "").trim();
     const requiredFields = [
       ["Kode hotspot", data.kodeHotspot],
       ["Nama hotspot", data.namaHotspot],
@@ -124,7 +134,7 @@ export async function POST(request: Request) {
       formatKoordinatValid: coordinateFormatValid,
       dokumentasiTersedia: Array.isArray(data.documents) ? data.documents.length > 0 : Boolean(data.document),
       fieldWajibKosong: missingFields,
-      validasiLapangan: { supervisiTercatat: supervisorReviewRecorded, kroscekSebelumnyaSesuai: crossCheckRecorded },
+      hasilKroscekYangSudahTercatat: crossCheckResult || null,
       kandidatDuplikatDenganNamaKelurahanAlamatSama: duplicateCount,
       definisiStatusSop: {
         aktif: "Masih digunakan atau masih terdapat aktivitas populasi kunci dalam periode tertentu.",
@@ -145,15 +155,22 @@ export async function POST(request: Request) {
         "Gunakan definisi operasional yang disertakan untuk membedakan hotspot aktif, baru, tidak aktif, dan perlu verifikasi. Jangan mengubah status hanya dari dugaan.",
         "FieldWajibKosong dan formatKoordinatValid dihitung server; jangan menyangkal hasil pemeriksaan deterministik tersebut.",
         "Set duplikasi=ada hanya bila kandidatDuplikatDenganNamaKelurahanAlamatSama lebih dari nol. Duplikasi memerlukan pemeriksaan manual, bukan bukti otomatis bahwa dua catatan adalah lokasi yang sama.",
-        "Untuk validasi lokasi, hasil sesuai hanya jika ada bukti supervisi atau kroscek dalam data. Jika bukti tidak tersedia, hasil harus perlu_klarifikasi; jangan menganggap bukti ada.",
-        "Finalisasi database hanya layak disarankan jika seluruh kriteria SOP terpenuhi. Gunakan Perlu perbaikan untuk kekurangan/inconsistency nyata, Pending untuk bukti supervisi atau kroscek yang belum tersedia.",
-        "Berikan satu hasil untuk setiap kriteria SOP, sebutkan bukti dari field yang tersedia, dan jangan mengarang fakta atau menyimpulkan kondisi kesehatan individu.",
+        "QC AI dilakukan per submission. Form supervisi terpisah dan dapat mencakup beberapa hotspot; ketiadaan data supervisi atau workflowHistory tidak boleh dianggap sebagai kegagalan QC dan tidak boleh menjadi alasan tunggal memberi status Pending atau Perlu perbaikan.",
+        "Nilai lokasi dari koordinat, format koordinat, alamat/deskripsi, dan catatan pada submission. Gunakan hasilKroscekYangSudahTercatat hanya jika tersedia. Jika bukti lapangan atau kroscek pada submission belum cukup, checklist lokasi boleh perlu_verifikasi dan sarankan verifikasi manual; jangan menyimpulkan supervisi tidak dilakukan.",
+        "Finalisasi database hanya layak disarankan jika seluruh kriteria SOP terpenuhi. Gunakan Perlu perbaikan untuk kekurangan atau inkonsistensi nyata; Pending bila bukti yang diperlukan pada submission masih perlu konfirmasi, bukan semata-mata karena tidak ada form supervisi.",
+        "Berikan satu hasil untuk setiap kriteria SOP. Tulis bukti dalam Bahasa Indonesia alami: jangan tampilkan nama properti JSON atau istilah camelCase seperti FieldWajibKosong; gunakan frasa 'field wajib yang belum terisi', 'format koordinat', dan 'jumlah data dengan nama, kelurahan, dan alamat yang sama'. Sebutkan bukti dari field yang tersedia, dan jangan mengarang fakta atau menyimpulkan kondisi kesehatan individu.",
         "Semua keluaran adalah saran untuk ditinjau reviewer manusia, bukan keputusan atau perubahan data otomatis. Tulis Bahasa Indonesia singkat dan spesifik.",
       ].join(" "),
       prompt: `Tinjau data terhadap lima kriteria SOP di atas. Jangan menambah standar yang tidak disebutkan. Hasilkan saran QC terstruktur dan checklist lima kriteria.\n${JSON.stringify(reviewData)}`,
     });
 
-    return Response.json({ suggestion: output });
+    const suggestion = {
+      ...output,
+      note: humanizeAiText(output.note),
+      alasan: humanizeAiText(output.alasan),
+      pemeriksaanSop: output.pemeriksaanSop.map((check) => ({ ...check, bukti: humanizeAiText(check.bukti) })),
+    };
+    return Response.json({ suggestion });
   } catch {
     return Response.json({ error: "AI QC gagal meninjau data. Coba lagi." }, { status: 502 });
   }
