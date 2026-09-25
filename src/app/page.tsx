@@ -1,7 +1,7 @@
 "use client";
 
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { addDoc, arrayUnion, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import type { Map as LeafletMap } from "leaflet";
@@ -184,6 +184,8 @@ export default function Home() {
   const [showSupervisionForm, setShowSupervisionForm] = useState(false);
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
   const [showQcModal, setShowQcModal] = useState(false);
+  const [deletingHotspotId, setDeletingHotspotId] = useState<string | null>(null);
+  const deletingHotspotRef = useRef(false);
   const qcUploadKeys = useRef<Record<string, string>>({});
   const filteredHotspots = useMemo(() => hotspotRows.filter((hotspot) => {
     const matchesQuery = Object.values(hotspot).join(" ").toLowerCase().includes(searchQuery.toLowerCase());
@@ -392,6 +394,31 @@ export default function Home() {
     if (auth) await signOut(auth);
   }
 
+  async function removeHotspotData(hotspot: Hotspot) {
+    if (!db || roleKey !== "admin" || deletingHotspotRef.current) return;
+    const confirmed = window.confirm(`Hapus data hotspot "${hotspot.name}" dari Firestore? Lampiran di Google Drive tidak ikut terhapus.`);
+    if (!confirmed) return;
+
+    deletingHotspotRef.current = true;
+    setDeletingHotspotId(hotspot.id);
+    setDataError("");
+    try {
+      await deleteDoc(doc(db, "submissions", hotspot.id));
+      setHotspotRows((rows) => rows.filter((row) => row.id !== hotspot.id));
+      if (selectedHotspot?.id === hotspot.id) {
+        setSelectedHotspot(null);
+        setShowQcModal(false);
+      }
+      setLastUpdated("sekarang");
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      setDataError(code === "permission-denied" ? "Akses hapus ditolak Firestore Rules." : "Data hotspot gagal dihapus.");
+    } finally {
+      deletingHotspotRef.current = false;
+      setDeletingHotspotId(null);
+    }
+  }
+
   async function reviewQcWithAi(submissionId: string): Promise<AiQcSuggestion> {
     if (!authUser) throw new Error("Sesi login tidak ditemukan.");
     const token = await authUser.getIdToken();
@@ -550,7 +577,7 @@ export default function Home() {
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Monitoring &amp; Quality Control"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Data tersinkronisasi <strong>{lastUpdated}</strong></div></section>
         {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Data menunggu QC</strong><p>Pantau status data yang sudah dikirim.</p></div><strong className="role-action-count">{pendingQc}</strong></article></section>}
         <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={String(totalHotspots)} note={dataError || (dataLoading ? "Memuat Firestore..." : "Data aktual Firestore")} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU QC" : "PERLU VALIDASI QC"} value={String(pendingQc)} note="Menunggu pemeriksaan" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={String(hivPositive)} suffix={`/ ${hivTests} Tes`} note="Dari data Firestore" icon="♥" /></section>
-        <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Quality Control"} subtitle={isEnumerator ? "Pantau status validasi dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau melakukan validasi analis"} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status QC"><option>Semua</option><option>Valid</option><option>Pending</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS FISIK</th><th>STATUS VALIDASI QC</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{hotspot.qc}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button></td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data Firestore..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data <button className="button button-link">Lihat semua data →</button></div></section>
+        <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Quality Control"} subtitle={isEnumerator ? "Pantau status validasi dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau melakukan validasi analis"} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status QC"><option>Semua</option><option>Valid</option><option>Pending</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS FISIK</th><th>STATUS VALIDASI QC</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{hotspot.qc}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button>{roleKey === "admin" && <button type="button" className="row-action row-action-danger" onClick={() => void removeHotspotData(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}</td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data Firestore..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data <button className="button button-link">Lihat semua data →</button></div></section>
         <DashboardOverview rows={hotspotRows} canLoadMore={submissionCursor !== null} />
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}

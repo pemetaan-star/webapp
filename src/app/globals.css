@@ -105,6 +105,23 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 @media (max-width: 760px) { .login-layout { grid-template-columns: 1fr; }.login-intro { padding: 34px; }.login-description { margin-bottom: 20px; }.login-features { display: none; }.login-form { padding: 34px; }.login-footer { margin-top: 38px; } }
 @media (max-width: 600px) { .user-modal { padding: 17px; }.user-edit-form { grid-template-columns: 1fr; }.user-modal-actions { grid-column: auto; } }
 @media (max-width: 600px) { .supervision-launch { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); } .supervision-launch span { display: inline; } }
+@media (max-width: 600px) {
+	.supervision-modal { width: 100%; min-width: 0; max-height: calc(100dvh - 24px); padding: 14px; }
+	.supervision-modal .user-modal-header { gap: 10px; margin-bottom: 14px; }
+	.supervision-form, .supervision-grid, .supervision-text-grid, .supervision-sign-grid, .supervision-check-section { min-width: 0; }
+	.supervision-grid, .supervision-text-grid, .supervision-sign-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+	.supervision-check-table { overflow: visible; border: 0; }
+	.supervision-check-head { display: none; }
+	.supervision-check-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "number yes no" "item item item"; gap: 8px; margin-bottom: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+	.supervision-check-row > span:first-child { grid-area: number; display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; color: var(--teal); background: #e3f6f3; font-weight: 700; }
+	.supervision-check-row > span:nth-child(2) { grid-area: item; min-width: 0; overflow-wrap: anywhere; font-size: .72rem; }
+	.supervision-check-row label:nth-of-type(1) { grid-area: yes; }
+	.supervision-check-row label:nth-of-type(2) { grid-area: no; }
+	.supervision-check-row label { justify-content: flex-end; white-space: nowrap; }
+	.supervision-check-row input { margin: 0; }
+	.supervision-form .user-modal-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+	.supervision-form .user-modal-actions .button { width: 100%; }
+}
 @media (max-width: 600px) { .detail-grid { grid-template-columns: 1fr; } }
 /* Minimal premium login surface. */
 .login-page { padding: 24px; background: radial-gradient(circle at 12% 12%, #d9f1ed 0, transparent 34%), linear-gradient(145deg, #f4f8fb 0%, #e9f5f3 100%); }
