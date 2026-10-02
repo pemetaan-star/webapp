@@ -1,4 +1,4 @@
-import { adminAuth, adminDb, requireAdmin } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminDb, requireAdmin } from "@/lib/firebase-admin";
 
 const supportedRoles = new Set(["admin", "data analis", "data analyst", "koordinator", "supervisor", "enumerator"]);
 const supportedOrganizations = new Set(["lgi", "igama", "wamarapa", "fatayat_nu"]);
@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   const authorization = await requireAdmin(request);
   if ("response" in authorization) return authorization.response;
 
+  const adminDb = getAdminDb();
   try {
     const snapshot = await adminDb.collection("user").get();
     const users = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
   const authorization = await requireAdmin(request);
   if ("response" in authorization) return authorization.response;
 
+  const adminAuth = getAdminAuth();
+  const adminDb = getAdminDb();
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const username = typeof body?.username === "string" ? body.username.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim() : "";
@@ -57,6 +60,8 @@ export async function PATCH(request: Request) {
   const authorization = await requireAdmin(request);
   if ("response" in authorization) return authorization.response;
 
+  const adminAuth = getAdminAuth();
+  const adminDb = getAdminDb();
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const uid = typeof body?.uid === "string" ? body.uid.trim() : "";
   const username = typeof body?.username === "string" ? body.username.trim() : "";
@@ -106,6 +111,8 @@ export async function DELETE(request: Request) {
   const authorization = await requireAdmin(request);
   if ("response" in authorization) return authorization.response;
 
+  const adminAuth = getAdminAuth();
+  const adminDb = getAdminDb();
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const uid = typeof body?.uid === "string" ? body.uid.trim() : "";
   if (!uid) return Response.json({ error: "UID user wajib diisi." }, { status: 400 });

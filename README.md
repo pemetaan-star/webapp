@@ -12,6 +12,10 @@ Arsitektur migrasi saat ini:
 
 Catatan untuk agen AI: sebelum mengubah fitur yang sudah dimigrasikan, bandingkan implementasinya dengan project lama agar nama field dan aturan role tetap konsisten. Enumerator hanya menginput dan membaca data miliknya; Supervisor memeriksa pelaksanaan lapangan; Koordinator melakukan review; Data Analis memvalidasi dan memfinalkan data; Admin mengelola profil user.
 
+## Konfigurasi Firebase Admin
+
+API server membutuhkan `FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, dan `FIREBASE_ADMIN_PRIVATE_KEY` pada `.env.local` serta environment deployment. Isi `FIREBASE_ADMIN_PRIVATE_KEY` dengan nilai `private_key` dari service account Firebase, termasuk baris `BEGIN` dan `END`; gunakan format PEM yang valid atau newline escaped (`\n`). Jangan mengisi variabel ini dengan seluruh JSON service account atau meng-commit kredensial.
+
 ## Konfigurasi upload
 
 Salin `.env.example` menjadi `.env.local`, lalu isi konfigurasi Firebase dan:

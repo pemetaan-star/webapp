@@ -1,11 +1,13 @@
 import { createHash, randomInt } from "node:crypto";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 
 function normalizeIdentity(value: string) {
   return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 export async function POST(request: Request) {
+  const adminAuth = getAdminAuth();
+  const adminDb = getAdminDb();
   const authorization = request.headers.get("authorization") || "";
   const [scheme, token] = authorization.split(" ");
   if (scheme !== "Bearer" || !token) {

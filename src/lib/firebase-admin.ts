@@ -4,13 +4,6 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
-const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
-const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
-if (!projectId || !clientEmail || !privateKey) {
-  throw new Error("Kredensial Firebase Admin belum dikonfigurasi lengkap.");
-}
-
 function normalizePrivateKey(value: string) {
   let normalized = value.trim();
   if (normalized.startsWith('"') && normalized.endsWith('"')) {
@@ -27,15 +20,34 @@ function normalizePrivateKey(value: string) {
   return normalized.replace(/\\+n/g, "\n").replace(/\r\n/g, "\n").trim();
 }
 
-const adminApp = getApps()[0] || initializeApp({
-  credential: cert({ projectId, clientEmail, privateKey: normalizePrivateKey(privateKey) }),
-  projectId,
-});
+function getAdminApp() {
+  const existingApp = getApps()[0];
+  if (existingApp) return existingApp;
 
-export const adminAuth = getAuth(adminApp);
-export const adminDb = getFirestore(adminApp);
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error("Kredensial Firebase Admin belum dikonfigurasi lengkap.");
+  }
+
+  return initializeApp({
+    credential: cert({ projectId, clientEmail, privateKey: normalizePrivateKey(privateKey) }),
+    projectId,
+  });
+}
+
+export function getAdminAuth() {
+  return getAuth(getAdminApp());
+}
+
+export function getAdminDb() {
+  return getFirestore(getAdminApp());
+}
 
 export async function requireAdmin(request: Request) {
+  const adminAuth = getAdminAuth();
+  const adminDb = getAdminDb();
   const authorization = request.headers.get("authorization") || "";
   const [scheme, token] = authorization.split(" ");
 

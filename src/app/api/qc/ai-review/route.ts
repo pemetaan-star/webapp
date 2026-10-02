@@ -1,6 +1,6 @@
 import { createGoogle } from "@ai-sdk/google";
 import { generateText, Output } from "ai";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 import { z } from "zod";
 
 const qcCriteria = [
@@ -42,6 +42,8 @@ function humanizeAiText(value: string) {
 }
 
 export async function POST(request: Request) {
+  const adminAuth = getAdminAuth();
+  const adminDb = getAdminDb();
   const authorization = request.headers.get("authorization") || "";
   const [scheme, token] = authorization.split(" ");
   if (scheme !== "Bearer" || !token) {
