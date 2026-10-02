@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     if (String(profile.get("role") || "").trim().toLowerCase() !== "enumerator") {
       return Response.json({ error: "Akses hanya untuk enumerator." }, { status: 403 });
     }
-  } catch {
+  } catch (error) {
+    console.error("[hotspots/code] Failed to verify enumerator profile:", error instanceof Error ? error.message : "Unknown error");
     return Response.json({ error: "Profil enumerator tidak dapat diverifikasi." }, { status: 500 });
   }
 
@@ -89,6 +90,8 @@ export async function POST(request: Request) {
       return Response.json({ kodeHotspot });
     } catch (error) {
       if (error instanceof Error && error.message === "HOTSPOT_CODE_COLLISION") continue;
+      const errorCode = error && typeof error === "object" && "code" in error ? String(error.code) : "unknown";
+      console.error("[hotspots/code] Failed to generate hotspot code:", errorCode, error instanceof Error ? error.message : "Unknown error");
       return Response.json({ error: "Kode hotspot gagal dibuat." }, { status: 500 });
     }
   }
