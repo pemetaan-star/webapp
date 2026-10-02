@@ -767,7 +767,13 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
           body: JSON.stringify({ namaHotspot, kelurahan, alamat }),
           signal: controller.signal,
         });
-        const result = await response.json();
+        const responseText = await response.text();
+        let result: { error?: string; kodeHotspot?: string };
+        try {
+          result = JSON.parse(responseText) as { error?: string; kodeHotspot?: string };
+        } catch {
+          throw new Error(`Server gagal membuat respons JSON (HTTP ${response.status}). Periksa konfigurasi Firebase Admin dan log Vercel.`);
+        }
         if (!response.ok) throw new Error(result.error || "Kode hotspot gagal dibuat.");
         if (!result.kodeHotspot) throw new Error("Server tidak mengembalikan kode hotspot.");
         setHotspotCode(String(result.kodeHotspot));
