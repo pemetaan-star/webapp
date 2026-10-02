@@ -11,8 +11,24 @@ if (!projectId || !clientEmail || !privateKey) {
   throw new Error("Kredensial Firebase Admin belum dikonfigurasi lengkap.");
 }
 
+function normalizePrivateKey(value: string) {
+  let normalized = value.trim();
+  if (normalized.startsWith('"') && normalized.endsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(normalized);
+      normalized = typeof parsed === "string" ? parsed : normalized.slice(1, -1);
+    } catch {
+      normalized = normalized.slice(1, -1);
+    }
+  } else if (normalized.startsWith("'") && normalized.endsWith("'")) {
+    normalized = normalized.slice(1, -1);
+  }
+
+  return normalized.replace(/\\+n/g, "\n").replace(/\r\n/g, "\n").trim();
+}
+
 const adminApp = getApps()[0] || initializeApp({
-  credential: cert({ projectId, clientEmail, privateKey: privateKey.replace(/\\n/g, "\n") }),
+  credential: cert({ projectId, clientEmail, privateKey: normalizePrivateKey(privateKey) }),
   projectId,
 });
 
