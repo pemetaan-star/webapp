@@ -218,12 +218,13 @@ export default function Home() {
           setUserProfile(ownProfile);
           if (!normalizeOrganization(ownProfile.organisasi) && user.email) {
             try {
-              const profileQuery = query(collection(db, "user"), where("email", "==", user.email), limit(1));
+              const profileQuery = query(collection(db, "user"), where("email", "==", user.email), limit(10));
               const profileByEmail = await getDocs(profileQuery);
-              const matchingProfile = profileByEmail.docs.find((item) => item.id !== user.uid);
-              const fallbackOrganization = matchingProfile
-                ? normalizeUserProfile(matchingProfile.id, matchingProfile.data()).organisasi
-                : "";
+              const matchingProfile = profileByEmail.docs
+                .filter((item) => item.id !== user.uid)
+                .map((item) => normalizeUserProfile(item.id, item.data()))
+                .find((candidate) => normalizeOrganization(candidate.organisasi));
+              const fallbackOrganization = matchingProfile?.organisasi || "";
               if (fallbackOrganization) setUserProfile({ ...ownProfile, organisasi: fallbackOrganization });
             } catch {
               // The UID profile remains usable if an optional email lookup is unavailable.
