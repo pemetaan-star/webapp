@@ -963,11 +963,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   }, [user]);
 
   useEffect(() => {
-    const codeInput = document.querySelector<HTMLInputElement>('.enumerator-form input[name="kodeHotspot"]');
-    if (codeInput) codeInput.placeholder = hotspotCodeLoading ? "Membuat kode hotspot..." : "Terisi otomatis setelah identitas lokasi lengkap";
-  }, [hotspotCodeLoading]);
-
-  useEffect(() => {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
     if (!form) return;
     form.setAttribute("aria-busy", String(saving));
@@ -1038,7 +1033,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     };
   }, [existingHotspots]);
 
-  return <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={hotspotCode} setHotspotCode={setHotspotCode} locationSubtypes={locationSubtypes} />;
+  return <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={hotspotCode} hotspotCodeLoading={hotspotCodeLoading} setHotspotCode={setHotspotCode} locationSubtypes={locationSubtypes} />;
 
   function startGpsCapture() {
     if (gpsLoading) return;
