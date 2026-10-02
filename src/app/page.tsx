@@ -62,7 +62,15 @@ type UserProfile = {
 function normalizeUserProfile(id: string, data: Record<string, unknown>) {
   const profile = { id, ...data } as UserProfile;
   const name = profile.nama?.trim() || profile.name?.trim() || "Nama belum diatur";
-  return { ...profile, name, nama: name };
+  const organization = [
+    data.organisasi,
+    data.organization,
+    data.komunitasOrganisasi,
+    data.komunitas_organisasi,
+    data.organisasiPelaksana,
+    data.organisasi_pelaksana,
+  ].find((value): value is string => typeof value === "string" && Boolean(value.trim()));
+  return { ...profile, name, nama: name, ...(organization ? { organisasi: organization } : {}) };
 }
 
 function normalizeRole(role?: string) {
@@ -206,7 +214,21 @@ export default function Home() {
       if (user && db) {
         const profileSnapshot = await getDoc(doc(db, "user", user.uid));
         if (profileSnapshot.exists()) {
-          setUserProfile(normalizeUserProfile(profileSnapshot.id, profileSnapshot.data()));
+          const ownProfile = normalizeUserProfile(profileSnapshot.id, profileSnapshot.data());
+          setUserProfile(ownProfile);
+          if (!normalizeOrganization(ownProfile.organisasi) && user.email) {
+            try {
+              const profileQuery = query(collection(db, "user"), where("email", "==", user.email), limit(1));
+              const profileByEmail = await getDocs(profileQuery);
+              const matchingProfile = profileByEmail.docs.find((item) => item.id !== user.uid);
+              const fallbackOrganization = matchingProfile
+                ? normalizeUserProfile(matchingProfile.id, matchingProfile.data()).organisasi
+                : "";
+              if (fallbackOrganization) setUserProfile({ ...ownProfile, organisasi: fallbackOrganization });
+            } catch {
+              // The UID profile remains usable if an optional email lookup is unavailable.
+            }
+          }
         } else if (user.email) {
           const profileQuery = query(collection(db, "user"), where("email", "==", user.email), limit(1));
           const profileByEmail = await getDocs(profileQuery);
