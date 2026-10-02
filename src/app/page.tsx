@@ -497,6 +497,8 @@ export default function Home() {
 
 function DashboardLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Data intelligence platform</p><h2>Menyiapkan dashboard</h2><p>Mengambil data terbaru dari Firestore...</p><div className="dashboard-loading-track" /></div></div>; }
 
+function FormSubmissionLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Lingga · Pendataan lapangan</p><h2>Mengirim data pemetaan</h2><p>Foto dokumentasi sedang diunggah dan data sedang disimpan.</p><div className="dashboard-loading-track" /></div></div>; }
+
 
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -804,7 +806,11 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   };
   const hotspotIdentity = JSON.stringify([hotspotName.trim(), village.trim(), address.trim()]);
   const activeHotspotCode = hotspotCodeIdentity === hotspotIdentity ? hotspotCode : "";
-  return <><EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={setVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={setPreviousHotspotId} previousHotspots={existingHotspots} onSelectPreviousHotspot={selectPreviousHotspot} locationSubtypes={locationSubtypes} /><GpsConfirmationDialog key={gpsStartedAt} mode={gpsDialogMode} result={gpsCandidate} startedAt={gpsStartedAt} onCancel={cancelGps} onAccept={acceptGps} onRetry={retryGps} /></>;
+  return <>
+    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={setVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={setPreviousHotspotId} previousHotspots={existingHotspots} onSelectPreviousHotspot={selectPreviousHotspot} locationSubtypes={locationSubtypes} />
+    {saving && <FormSubmissionLoading />}
+    <GpsConfirmationDialog key={gpsStartedAt} mode={gpsDialogMode} result={gpsCandidate} startedAt={gpsStartedAt} onCancel={cancelGps} onAccept={acceptGps} onRetry={retryGps} />
+  </>;
   function startGpsCapture() {
     if (gpsLoading) return;
     if (!navigator.geolocation) {
