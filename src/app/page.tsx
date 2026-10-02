@@ -7,7 +7,7 @@ import { useRef } from "react";
 import type { Map as LeafletMap } from "leaflet";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { Kpi, PanelHeading, Risk } from "@/app/components/dashboard";
-import { EnumeratorFormFields, organizationOptions } from "@/app/components/enumerator-form";
+import { EnumeratorFormFields, normalizeOrganization, organizationOptions } from "@/app/components/enumerator-form";
 import { DashboardOverview } from "@/app/components/dashboard-overview";
 import { ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
 
@@ -59,15 +59,6 @@ type UserProfile = {
   role?: string;
   organisasi?: string;
 };
-
-function normalizeOrganization(value?: string) {
-  const normalized = (value || "").toLowerCase();
-  if (normalized.includes("igama")) return "igama";
-  if (normalized.includes("wamarapa")) return "wamarapa";
-  if (normalized.includes("fatayat") || normalized.includes("penasun")) return "fatayat_nu";
-  if (normalized.includes("lgi") || normalized.includes("lingkar gagasan")) return "lgi";
-  return "";
-}
 
 function normalizeUserProfile(id: string, data: Record<string, unknown>) {
   const profile = { id, ...data } as UserProfile;
@@ -991,23 +982,6 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     }
     return () => loading?.remove();
   }, [saving]);
-
-  useEffect(() => {
-    const form = document.querySelector<HTMLFormElement>(".enumerator-form");
-    const organizationSelect = form?.querySelector<HTMLSelectElement>('select[name="organisasi"]');
-    const organizationValue = normalizeOrganization(profile?.organisasi);
-    if (!organizationSelect) return;
-    const organizationLabel = organizationOptions.find(([value]) => value === organizationValue)?.[1] || "Organisasi belum diatur";
-    const displayInput = document.createElement("input");
-    displayInput.value = organizationLabel;
-    displayInput.readOnly = true;
-    displayInput.setAttribute("aria-label", "Organisasi / Komunitas Pelaksana");
-    const hiddenInput = document.createElement("input");
-    hiddenInput.type = "hidden";
-    hiddenInput.name = "organisasi";
-    hiddenInput.value = organizationValue;
-    organizationSelect.replaceWith(displayInput, hiddenInput);
-  }, [profile?.organisasi]);
 
   useEffect(() => {
     const form = document.querySelector<HTMLFormElement>(".enumerator-form");
