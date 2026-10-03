@@ -123,6 +123,15 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 	.supervision-form .user-modal-actions .button { width: 100%; }
 }
 @media (max-width: 600px) { .detail-grid { grid-template-columns: 1fr; } }
+.enumerator-form > .visit-picker { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.required-label, .required-legend { display: inline-flex; align-items: center; gap: 4px; }
+.required-indicator { color: #ef4444; font-weight: 700; line-height: 1; }
+.enumerator-form input:focus-visible, .enumerator-form select:focus-visible, .enumerator-form textarea:focus-visible, .enumerator-form .gps-input button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.enumerator-form .gps-input button { min-height: 48px; }
+.enumerator-form input[type="file"] { min-height: 48px; }
+@media (max-width: 600px) {
+	.enumerator-form > .visit-picker { grid-template-columns: minmax(0, 1fr); }
+}
 /* Minimal premium login surface. */
 .login-page { padding: 24px; background: radial-gradient(circle at 12% 12%, #d9f1ed 0, transparent 34%), linear-gradient(145deg, #f4f8fb 0%, #e9f5f3 100%); }
 .login-page::before, .login-page::after { display: none; }

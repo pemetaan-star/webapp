@@ -4,6 +4,11 @@ export async function POST(request: Request) {
   const gasUploadUrl = process.env.GAS_UPLOAD_URL;
   if (!gasUploadUrl) return NextResponse.json({ message: "GAS_UPLOAD_URL belum dikonfigurasi." }, { status: 500 });
 
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 3_000_000) {
+    return NextResponse.json({ message: "Foto terlalu besar. Pilih foto yang lebih kecil." }, { status: 413 });
+  }
+
   try {
     const payload = await request.json();
     const fileData = typeof payload.fileData === "string" ? payload.fileData : "";
@@ -11,7 +16,10 @@ export async function POST(request: Request) {
     const fileMime = typeof payload.fileMime === "string" ? payload.fileMime : "application/octet-stream";
     const idempotencyKey = typeof payload.idempotencyKey === "string" ? payload.idempotencyKey.trim() : "";
     const allowedMime = /^(image\/(jpeg|png|gif|webp)|application\/(pdf|msword)|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/i;
-    if (!fileData || !fileName || !idempotencyKey || !allowedMime.test(fileMime) || fileData.length > 14_000_000) {
+    if (fileData.length > 2_700_000) {
+      return NextResponse.json({ message: "Foto terlalu besar. Pilih foto yang lebih kecil." }, { status: 413 });
+    }
+    if (!fileData || !fileName || !idempotencyKey || !allowedMime.test(fileMime)) {
       return NextResponse.json({ message: "Dokumen tidak valid atau melebihi batas ukuran." }, { status: 400 });
     }
     const response = await fetch(gasUploadUrl, {

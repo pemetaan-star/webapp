@@ -742,6 +742,19 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   const gpsTimeoutRef = useRef<number | null>(null);
   const bestPositionRef = useRef<GeolocationPosition | null>(null);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousRootOverflow = root.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    root.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      root.style.overflow = previousRootOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, []);
+
   useEffect(() => () => {
     if (gpsWatchRef.current !== null) navigator.geolocation?.clearWatch(gpsWatchRef.current);
     if (gpsTimeoutRef.current !== null) window.clearTimeout(gpsTimeoutRef.current);
@@ -909,17 +922,34 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     setError("");
     try {
       submissionIdempotencyKey.current ||= crypto.randomUUID();
-      const uploadResults = await Promise.all(documents.map(async (document, index) => {
-        const fileData = await toBase64(document);
+      const uploadResults: Array<{ fileName: string; fileId: string; fileUrl: string }> = [];
+      for (const [index, document] of documents.entries()) {
+        const uploadFile = await prepareImageForUpload(document);
+        if (uploadFile.size > MAX_UPLOAD_FILE_BYTES) {
+          throw new Error(`Foto "${document.name}" masih terlalu besar setelah diperkecil. Pilih foto lain dengan ukuran di bawah 2 MB.`);
+        }
+        const fileData = await toBase64(uploadFile);
         const uploadResponse = await fetch("/api/documents/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileData, fileName: document.name, fileMime: document.type || "application/octet-stream", username: profile?.username || user.email, idempotencyKey: `${submissionIdempotencyKey.current}-${index + 1}` }),
+          body: JSON.stringify({ fileData, fileName: uploadFile.name, fileMime: uploadFile.type || "application/octet-stream", username: profile?.username || user.email, idempotencyKey: `${submissionIdempotencyKey.current}-${index + 1}` }),
         });
-        const uploadResult = await uploadResponse.json();
+        const responseText = await uploadResponse.text();
+        let uploadResult: { success?: boolean; message?: string; fileName?: string; fileId?: string; fileUrl?: string };
+        try {
+          uploadResult = JSON.parse(responseText) as typeof uploadResult;
+        } catch {
+          if (uploadResponse.status === 413) {
+            throw new Error(`Foto "${document.name}" terlalu besar untuk diunggah. Pilih foto yang lebih kecil.`);
+          }
+          throw new Error(`Upload foto ${index + 1} gagal (HTTP ${uploadResponse.status}). Coba lagi.`);
+        }
         if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.message || `Upload foto ${index + 1} gagal.`);
-        return uploadResult;
-      }));
+        if (!uploadResult.fileName || !uploadResult.fileId || !uploadResult.fileUrl) {
+          throw new Error(`Upload foto ${index + 1} berhasil tetapi respons penyimpanan tidak lengkap. Coba kirim ulang.`);
+        }
+        uploadResults.push({ fileName: uploadResult.fileName, fileId: uploadResult.fileId, fileUrl: uploadResult.fileUrl });
+      }
       const normalizedHotspotCode = String(form.get("kodeHotspot") || "").trim().toUpperCase();
       const relatedVisits = existingHotspots.filter((hotspot) => hotspot.hotspotCode?.trim().toUpperCase() === normalizedHotspotCode);
       const previousVisit = relatedVisits[0];
@@ -972,13 +1002,84 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   return <div className="user-modal-backdrop"><section className="user-modal enumerator-modal" role="dialog" aria-modal="true" aria-labelledby="enumerator-form-title"><div className="user-modal-header"><div><p className="eyebrow">Pendataan lapangan</p><h2 id="enumerator-form-title">Input Data Pemetaan</h2><p>Field mengikuti instrumen pemetaan. Data masuk Firestore, dokumen masuk Google Drive.</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div>{error && <p className="login-error user-modal-error">{error}</p>}<form className="user-edit-form enumerator-form" onSubmit={submit}><p className="form-section-title form-wide">A. Informasi Pelaksanaan</p><label>Nama Enumerator<input value={profile?.nama || user.email || ""} readOnly /></label><label>Organisasi / Komunitas Pelaksana<select name="organisasi" defaultValue="" required><option value="">Pilih organisasi</option><option value="lgi">Yayasan Lingkar Gagasan Indonesia (LGI)</option><option value="igama">Yayasan IGAMA</option><option value="wamarapa">Wamarapa</option><option value="fatayat_nu">SSR Fatayat NU Jawa Timur (PENASUN)</option></select></label><p className="form-section-title form-wide">B. Identitas Hotspot</p><label>Nama Hotspot<input name="namaHotspot" required /></label><label>Kecamatan<input name="kecamatan" required /></label><label>Kelurahan<input name="kelurahan" required /></label><label className="form-wide">Alamat atau Deskripsi Lokasi<textarea name="alamat" rows={2} required /></label><label className="form-wide">Titik Koordinat GPS<div className="gps-input"><input value={gps} placeholder="Tekan Gunakan GPS" readOnly required /><button type="button" className="button button-secondary" onClick={useCurrentLocation}>⌖ Gunakan GPS</button></div><small>Koordinat diambil dari lokasi perangkat.</small></label><label className="form-wide">Foto Dokumentasi Lokasi<input name="document" type="file" accept="image/*" capture="environment" required /></label><p className="form-section-title form-wide">C. Karakteristik Hotspot</p><label>Status Hotspot<select name="statusHotspot" defaultValue="" required><option value="">Pilih status</option><option value="aktif">Aktif</option><option value="baru">Baru</option><option value="tidak_aktif">Tidak Aktif</option><option value="perlu_klarifikasi">Perlu Klarifikasi</option><option value="lama">Lama</option></select></label><fieldset><legend>Kategori Populasi Kunci *</legend><div className="checkbox-grid">{[["lsl", "LSL"], ["transgender", "Transgender"], ["idu", "IDU / PWID"], ["pspl___tl__pekerja_seks_perempuan", "PSPL / TL"]].map(([value, label]) => <label key={value}><input type="checkbox" name="populasiKunci" value={value} /> {label}</label>)}</div></fieldset><label>Tipe Lokasi Utama<select name="tipeLokasi" defaultValue="" required><option value="">Pilih tipe lokasi</option><option value="ruang_publik">Ruang Publik / Area Terbuka / Jalanan</option><option value="tempat_makan_hiburan">Tempat Makan / Nongkrong / Hiburan</option><option value="akomodasi_private">Akomodasi / Private Venue</option><option value="perawatan_kebugaran">Perawatan & Kebugaran</option><option value="platform_virtual">Platform Virtual / Online</option><option value="lainnya">Lainnya</option></select></label><label>Detail Sub-Tipe Lokasi<input name="subTipeLokasi" placeholder="Isi sub-tipe lokasi" required /></label><label>Tipe Lokasi Lainnya<input name="tipeLokasiLainnya" /></label><fieldset><legend>Waktu Aktivitas Dominan *</legend><div className="checkbox-grid">{[["pagi", "Pagi"], ["siang", "Siang"], ["sore", "Sore"], ["malam", "Malam"]].map(([value, label]) => <label key={value}><input type="checkbox" name="waktuAktivitas" value={value} /> {label}</label>)}</div></fieldset><label>Jumlah Populasi<input name="estimasiJumlahPopulasi" type="number" min="0" defaultValue="0" /></label><label>Jumlah Diedukasi<input name="jumlahDiedukasi" type="number" min="0" defaultValue="0" /></label><label>Jumlah Tes HIV<input name="jumlahTesHiv" type="number" min="0" defaultValue="0" /></label><label>Jumlah HIV+<input name="jumlahHivPositif" type="number" min="0" defaultValue="0" /></label><label className="form-wide">Catatan Tambahan Temuan Lapangan<textarea name="catatan" rows={2} /></label><p className="form-section-title form-wide">D. Informasi Hasil Pemetaan</p><label>Sumber Informasi<select name="sumberInformasi" defaultValue="" required><option value="">Pilih sumber</option><option value="populasi_kunci">Populasi kunci</option><option value="tokoh_kunci">Tokoh kunci</option><option value="observasi">Observasi Lapangan Langsung</option><option value="lainnya">Lainnya</option></select></label><label>No. HP Informan<input name="noHpInforman" type="tel" pattern="[0-9+]{9,15}" required /></label><label>Keterangan Informan<input name="keteranganAktivitas" required /></label><label className="form-wide">Kondisi Hotspot Saat Pemetaan<textarea name="kondisiSaatPemetaan" rows={2} required /></label><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan Data Pemetaan"}</button></div></form></section></div>;
 }
 
+const MAX_UPLOAD_FILE_BYTES = 2_000_000;
+
 function toBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
-    reader.onerror = () => reject(new Error("File tidak dapat dibaca."));
-    reader.readAsDataURL(file);
-  });
+  return file.arrayBuffer()
+    .then((buffer) => {
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 0x8000;
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+      }
+      return btoa(binary);
+    })
+    .catch(() => {
+      throw new Error(`Browser tidak dapat membaca file "${file.name}". Pilih ulang file dari perangkat atau ambil foto kembali.`);
+    });
+}
+
+async function prepareImageForUpload(file: File): Promise<File> {
+  const supportedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const needsCompression = file.size > MAX_UPLOAD_FILE_BYTES || !supportedMimeTypes.has(file.type.toLowerCase());
+  if (!needsCompression) return file;
+
+  let image: CanvasImageSource;
+  let width: number;
+  let height: number;
+  let cleanup = () => {};
+  let objectUrl: string | null = null;
+  try {
+    if (typeof createImageBitmap === "function") {
+      const bitmap = await createImageBitmap(file);
+      image = bitmap;
+      width = bitmap.width;
+      height = bitmap.height;
+      cleanup = () => bitmap.close();
+    } else {
+      objectUrl = URL.createObjectURL(file);
+      const element = new Image();
+      await new Promise<void>((resolve, reject) => {
+        element.onload = () => resolve();
+        element.onerror = () => reject(new Error("Image decode failed."));
+        element.src = objectUrl as string;
+      });
+      image = element;
+      width = element.naturalWidth;
+      height = element.naturalHeight;
+    }
+
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable.");
+    let scale = Math.min(1, 1600 / Math.max(width, height));
+    let compressed: Blob | null = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const quality = Math.max(0.4, 0.82 - (attempt % 4) * 0.14);
+      compressed = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/jpeg", quality);
+      });
+      if (!compressed) throw new Error("Image encoding failed.");
+      if (compressed.size <= MAX_UPLOAD_FILE_BYTES) break;
+      if ((attempt + 1) % 4 === 0) scale *= 0.8;
+    }
+    if (!compressed || compressed.size > MAX_UPLOAD_FILE_BYTES) {
+      throw new Error("Image remains too large after compression.");
+    }
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "foto-dokumentasi";
+    return new File([compressed], `${baseName}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+  } catch {
+    throw new Error(`Foto "${file.name}" tidak dapat diproses oleh browser. Pilih foto JPG/PNG yang lebih kecil atau ambil foto langsung dari kamera.`);
+  } finally {
+    cleanup();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function LoginScreen({ onLogin, loginError, setLoginError }: { onLogin: (user: User) => void; loginError: string; setLoginError: (value: string) => void }) {
