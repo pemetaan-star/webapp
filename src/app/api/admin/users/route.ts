@@ -101,7 +101,7 @@ export async function PATCH(request: Request) {
     return Response.json({ success: true });
   } catch (error) {
     const code = error instanceof Error && "code" in error ? String(error.code) : "";
-    if (code === "auth/user-not-found") return Response.json({ error: "Akun Firebase Auth tidak ditemukan." }, { status: 404 });
+    if (code === "auth/user-not-found") return Response.json({ error: "Akun pengguna tidak ditemukan." }, { status: 404 });
     if (code === "auth/email-already-exists") return Response.json({ error: "Email sudah digunakan akun lain." }, { status: 409 });
     return Response.json({ error: "Profil user gagal disimpan." }, { status: 500 });
   }
@@ -142,6 +142,6 @@ export async function DELETE(request: Request) {
 
     return Response.json({ success: true });
   } catch {
-    return Response.json({ error: "Akun Firebase Auth atau profil gagal dihapus." }, { status: 500 });
+    return Response.json({ error: "Akun atau profil pengguna gagal dihapus." }, { status: 500 });
   }
 }

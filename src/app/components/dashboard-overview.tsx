@@ -24,7 +24,7 @@ export function DashboardOverview({ rows, canLoadMore = true, onLoadMore }: { ro
   const risks = [
     ["HOTSPOT BARU", rows.filter((row) => row.status === "Baru").length, "teal"],
     ["TIDAK AKTIF", rows.filter((row) => row.status === "Tidak aktif").length, "coral"],
-    ["PENDING QC", rows.filter((row) => row.qc === "Pending").length, "amber"],
+    ["MENUNGGU PEMERIKSAAN", rows.filter((row) => row.qc === "Pending").length, "amber"],
     ["PERLU PERBAIKAN", rows.filter((row) => row.qc === "Perlu perbaikan").length, "blue"],
   ] as const;
   const coordinateCount = rows.filter((row) => {
@@ -32,8 +32,7 @@ export function DashboardOverview({ rows, canLoadMore = true, onLoadMore }: { ro
     return Number.isFinite(latitude) && Number.isFinite(longitude);
   }).length;
 
-  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} dari ${rows.length} data memiliki koordinat`} tag="REAL DATA" /><RealLeafletMap rows={rows} /></article><article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Dihitung dari data Firestore" /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Risiko Otomatis" subtitle="Ringkasan status yang dihitung dari data aktual" tag="REAL DATA" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article>{canLoadMore && rows.length >= 25 && <button type="button" className="button button-secondary" onClick={onLoadMore}>Muat data berikutnya</button>}</section>;
-}
+  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} dari ${rows.length} data memiliki koordinat`} tag="DATA LAPANGAN" /><RealLeafletMap rows={rows} /></article>  <article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle="Ringkasan berdasarkan data terkini" /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Ringkasan Perhatian" subtitle="Ikhtisar status dari data lapangan" tag="DATA LAPANGAN" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article>{canLoadMore && rows.length >= 25 && <button type="button" className="button button-secondary" onClick={onLoadMore}>Muat data berikutnya</button>}</section>;}
 
 function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -87,7 +86,7 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
           const popup = document.createElement("div");
           const name = document.createElement("strong");
           name.textContent = row.name;
-          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status QC: ${row.qc}`));
+          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status pemeriksaan: ${row.qc}`));
           leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).bindPopup(popup).addTo(layer);
         });
         if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
@@ -99,5 +98,5 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
     return () => { active = false; };
   }, [points]);
 
-  return <div className="leaflet-map-wrap"><div ref={mapRef} className="leaflet-map" />{points.length === 0 && <div className="real-empty">Belum ada koordinat GPS pada data Firestore.</div>}</div>;
+  return <div className="leaflet-map-wrap"><div ref={mapRef} className="leaflet-map" />{points.length === 0 && <div className="real-empty">Belum ada koordinat GPS pada data.</div>}</div>;
 }

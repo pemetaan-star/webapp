@@ -77,16 +77,32 @@ function normalizeRole(role?: string) {
   return (role || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function displayRole(role?: string) {
+  switch (normalizeRole(role)) {
+    case "admin": return "Administrator";
+    case "dataanalis":
+    case "dataanalyst": return "Data Analis";
+    case "koordinator":
+    case "kordinator": return "Koordinator";
+    case "supervisor": return "Supervisor";
+    case "enumerator": return "Enumerator";
+    default: return "Pengguna";
+  }
+}
+
 const statusClass: Record<Hotspot["status"], string> = { Aktif: "status-good", Baru: "status-new", "Tidak aktif": "status-off", "Perlu verifikasi": "status-off" };
 const qcClass: Record<Hotspot["qc"], string> = { Valid: "qc-valid", Pending: "qc-pending", "Perlu perbaikan": "qc-repair" };
 const workflowStageLabels: Record<Hotspot["workflowStage"], string> = {
   submitted: "Terkirim",
-  supervisor_review: "Review Supervisor",
-  coordinator_review: "Review Koordinator",
-  analyst_review: "Review Data Analis",
+  supervisor_review: "Pemeriksaan Supervisor",
+  coordinator_review: "Pemeriksaan Koordinator",
+  analyst_review: "Pemeriksaan Data Analis",
   finalized: "Final",
   needs_revision: "Perlu perbaikan",
 };
+function displayQcStatus(status: Hotspot["qc"]) {
+  return status === "Pending" ? "Menunggu" : status;
+}
 const locationSubtypes: Record<string, Array<[string, string]>> = {
   ruang_publik: [["jalanan_mangkal", "Jalanan / Titik Mangkal"], ["taman_kota", "Taman Kota / Alun-Alun / Halaman"], ["stasiun_terminal", "Stasiun / Terminal / Halte"], ["mall", "Mall"], ["makam", "Makam"], ["bangunan_kosong", "Bangunan Kosong / Mangkrak"], ["ruang_publik_lainnya", "Lainnya"]],
   tempat_makan_hiburan: [["warung_makan", "Warung Kopi / Warung Makan"], ["kafe_restoran", "Kafe / Restoran"], ["bar_club", "Bar / Club / Diskotik"], ["karaoke", "Karaoke (Hall / Room)"], ["tempat_makan_lainnya", "Lainnya"]],
@@ -201,8 +217,8 @@ export default function Home() {
   const isAnalyst = roleKey.includes("dataanalis") || roleKey.includes("dataanalyst");
   const isReviewer = isCoordinator || isAnalyst || roleKey === "admin";
   const canSupervise = !isEnumerator && (isReviewer || isSupervisor);
-  const roleTitle = isEnumerator ? "Dashboard Enumerator" : isReviewer ? "Dashboard Koordinator & Data Analis" : roleKey.includes("super") ? "Dashboard Supervisor" : "Dashboard Pendataan Hotspot";
-  const roleSubtitle = isEnumerator ? "Kelola input dan pantau data hotspot yang Anda kirim." : "Ringkasan data survei lapangan dan status validasi kualitas secara real-time.";
+  const roleTitle = isEnumerator ? "Ruang Kerja Enumerator" : isReviewer ? "Dashboard Koordinator & Data Analis" : roleKey.includes("super") ? "Dashboard Supervisor" : "Dashboard Pendataan Hotspot";
+  const roleSubtitle = isEnumerator ? "Kelola pendataan dan pantau hasil pemeriksaan hotspot yang Anda kirim." : "Pantau hasil survei lapangan dan proses pemeriksaan kualitas data.";
 
   useEffect(() => {
     if (!auth) {
@@ -236,12 +252,12 @@ export default function Home() {
           const profile = profileByEmail.docs[0];
           setUserProfile(profile ? normalizeUserProfile(profile.id, profile.data()) : null);
           if (profile && profile.id !== user.uid) {
-            setDataError("Profil ditemukan berdasarkan email, tetapi ID dokumen harus sama dengan UID Firebase agar dashboard dapat membaca submissions.");
+            setDataError("Profil akun belum tersambung dengan benar. Hubungi administrator untuk bantuan.");
           }
         } else {
           setUserProfile(null);
           setDataLoading(false);
-          setDataError("Profil user belum ditemukan. Buat dokumen user dengan ID UID Firebase dan field role.");
+          setDataError("Profil pengguna belum ditemukan. Pastikan akun Anda sudah terdaftar dan peran telah diatur.");
         }
       } else {
         setUserProfile(null);
@@ -261,17 +277,17 @@ export default function Home() {
         setHotspotRows(rows);
         setSubmissionCursor(isEnumerator ? null : snapshot.docs.at(-1) || null);
       } catch {
-        setDataError("Data Firestore tidak dapat dipetakan ke format dashboard.");
+        setDataError("Data tidak dapat ditampilkan pada dashboard saat ini.");
       } finally {
         setDataLoading(false);
       }
     }, (error) => {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
       setDataError(code === "permission-denied"
-        ? "Akses Firestore ditolak (permission-denied). Pastikan dokumen user/{UID Firebase} tersedia dan role sesuai."
+        ? "Akses data ditolak. Pastikan profil pengguna sudah lengkap dan memiliki akses yang benar."
         : code === "failed-precondition"
-          ? "Query Firestore memerlukan index. Buka tautan index dari Console Firebase atau periksa index submissions."
-          : `Data Firestore tidak dapat dimuat${code ? ` (${code})` : ""}. Periksa konfigurasi Firebase dan Rules.`);
+          ? "Data belum dapat dimuat. Silakan hubungi administrator."
+          : "Data tidak dapat dimuat. Silakan coba lagi atau hubungi administrator.");
       setDataLoading(false);
     });
     return unsubscribe;
@@ -302,7 +318,7 @@ export default function Home() {
 
   async function removeHotspotData(hotspot: Hotspot) {
     if (!db || roleKey !== "admin" || deletingHotspotRef.current) return;
-    const confirmed = window.confirm(`Hapus data hotspot "${hotspot.name}" dari Firestore? Lampiran di Google Drive tidak ikut terhapus.`);
+    const confirmed = window.confirm(`Hapus data hotspot "${hotspot.name}"? Dokumen lampiran tidak ikut terhapus.`);
     if (!confirmed) return;
 
     deletingHotspotRef.current = true;
@@ -318,7 +334,7 @@ export default function Home() {
       setLastUpdated("sekarang");
     } catch (error) {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
-      setDataError(code === "permission-denied" ? "Akses hapus ditolak Firestore Rules." : "Data hotspot gagal dihapus.");
+      setDataError(code === "permission-denied" ? "Akses penghapusan ditolak." : "Data hotspot gagal dihapus.");
     } finally {
       deletingHotspotRef.current = false;
       setDeletingHotspotId(null);
@@ -372,7 +388,7 @@ export default function Home() {
       });
     } catch (error) {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
-      throw new Error(code === "permission-denied" ? "Simpan QC ditolak oleh Firestore Rules. Pastikan role reviewer dan workflow stage sudah sesuai." : "Hasil QC gagal disimpan ke Firestore.");
+      throw new Error(code === "permission-denied" ? "Anda tidak memiliki akses untuk menyimpan hasil pemeriksaan ini." : "Hasil pemeriksaan gagal disimpan. Silakan coba lagi.");
     }
     setHotspotRows((rows) => rows.map((row) => row.id === selectedHotspot.id ? { ...row, qc: payload.status } : row));
     setShowQcModal(false);
@@ -478,12 +494,12 @@ export default function Home() {
   return (
     <div className={`dashboard-page ${isReviewer ? "can-review" : "read-only"} ${isEnumerator ? "enumerator-dashboard" : "reviewer-dashboard"}`}>
       {dataLoading && authUser && userProfile && <DashboardLoading />}
-      <nav className="topbar"><div className="brand"><span className="brand-mark">+</span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{userProfile?.role || "Firebase User"}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
+      <nav className="topbar"><div className="brand"><span className="brand-mark">+</span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{displayRole(userProfile?.role)}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
       <main className="dashboard-content">
-        <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Monitoring &amp; Quality Control"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Data tersinkronisasi <strong>{lastUpdated}</strong></div></section>
-        {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Data menunggu QC</strong><p>Pantau status data yang sudah dikirim.</p></div><strong className="role-action-count">{pendingQc}</strong></article></section>}
-        <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={String(totalHotspots)} note={dataError || (dataLoading ? "Memuat Firestore..." : "Data aktual Firestore")} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU QC" : "PERLU VALIDASI QC"} value={String(pendingQc)} note="Menunggu pemeriksaan" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={String(hivPositive)} suffix={`/ ${hivTests} Tes`} note="Dari data Firestore" icon="♥" /></section>
-        <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Quality Control"} subtitle={isEnumerator ? "Pantau status validasi dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau melakukan validasi analis"} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status QC"><option>Semua</option><option>Valid</option><option>Pending</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS FISIK</th><th>STATUS VALIDASI QC</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{hotspot.qc}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button>{roleKey === "admin" && <button type="button" className="row-action row-action-danger" onClick={() => void removeHotspotData(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}</td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data Firestore..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data <button className="button button-link">Lihat semua data →</button></div></section>
+        <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Pemantauan & Pemeriksaan Kualitas"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Pembaruan data <strong>{lastUpdated}</strong></div></section>
+        {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Menunggu pemeriksaan</strong><p>Pantau status data yang sudah Anda kirim.</p></div><strong className="role-action-count">{pendingQc}</strong></article></section>}
+        <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={String(totalHotspots)} note={dataError || (dataLoading ? "Memuat data terbaru..." : "Data terkini")} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={String(hivPositive)} suffix={`/ ${hivTests} Tes`} note="Dari data terkini" icon="♥" /></section>
+        <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Pemeriksaan Kualitas"} subtitle={isEnumerator ? "Pantau hasil pemeriksaan dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau memeriksa kualitas data."} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status pemeriksaan"><option>Semua</option><option>Valid</option><option value="Pending">Menunggu</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>HASIL PEMERIKSAAN</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{displayQcStatus(hotspot.qc)}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button>{roleKey === "admin" && <button type="button" className="row-action row-action-danger" onClick={() => void removeHotspotData(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}</td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data terbaru..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data</div></section>
         <DashboardOverview rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}
@@ -495,8 +511,7 @@ export default function Home() {
   );
 }
 
-function DashboardLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Data intelligence platform</p><h2>Menyiapkan dashboard</h2><p>Mengambil data terbaru dari Firestore...</p><div className="dashboard-loading-track" /></div></div>; }
-
+function DashboardLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Pemetaan Hotspot Malang</p><h2>Menyiapkan dashboard</h2><p>Memuat ringkasan data terbaru...</p><div className="dashboard-loading-track" /></div></div>; }
 function FormSubmissionLoading() { return <div className="dashboard-loading" role="status" aria-live="polite" aria-busy="true"><div className="dashboard-loading-card"><div className="dashboard-loading-brand"><span>+</span></div><p className="dashboard-loading-kicker">Lingga · Pendataan lapangan</p><h2>Mengirim data pemetaan</h2><p>Foto dokumentasi sedang diunggah dan data sedang disimpan.</p><div className="dashboard-loading-track" /></div></div>; }
 
 
@@ -506,7 +521,7 @@ function FormSubmissionLoading() { return <div className="dashboard-loading" rol
 function DetailModal({ hotspot, canReview, onClose, onReview }: { hotspot: Hotspot; canReview: boolean; onClose: () => void; onReview: () => void }) {
   const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(hotspot.documentName || "");
   const previewUrl = hotspot.documentFileId ? `/api/documents/preview?fileId=${encodeURIComponent(hotspot.documentFileId)}` : "";
-  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={hotspot.population} /><DetailItem label="Tipe lokasi" value={[hotspot.locationType, hotspot.locationSubtype].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /><DetailItem label="Tes HIV / HIV+" value={`${hotspot.hivTests || 0} / ${hotspot.hivPositive || 0}`} /></div><DetailItem label="Alamat atau deskripsi lokasi" value={hotspot.address} wide /><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={hotspot.informationSource} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen dan hasil QC</p>{isImage && previewUrl && <a className="document-preview" href={previewUrl} target="_blank" rel="noreferrer"><img src={previewUrl} alt={`Dokumentasi ${hotspot.name}`} /></a>}<div className="detail-grid"><DetailItem label="Dokumentasi" value={hotspot.documentName || "Tidak ada dokumen"} link={hotspot.documentUrl} /><DetailItem label="Status QC" value={hotspot.qc} /><DetailItem label="Pemeriksa" value={hotspot.qcInspector} /><DetailItem label="Tanggal pemeriksaan" value={hotspot.qcDate} /></div><DetailItem label="Catatan QC" value={hotspot.qcNote} wide /></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Tutup</button>{canReview && <button type="button" className="button button-primary" onClick={onReview}>Buka validasi QC</button>}</div></section></div>;
+  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={hotspot.population} /><DetailItem label="Tipe lokasi" value={[hotspot.locationType, hotspot.locationSubtype].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /><DetailItem label="Tes HIV / HIV+" value={`${hotspot.hivTests || 0} / ${hotspot.hivPositive || 0}`} /></div><DetailItem label="Alamat atau deskripsi lokasi" value={hotspot.address} wide /><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={hotspot.informationSource} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen pendukung dan pemeriksaan</p>{isImage && previewUrl && <a className="document-preview" href={previewUrl} target="_blank" rel="noreferrer"><img src={previewUrl} alt={`Dokumentasi ${hotspot.name}`} /></a>}<div className="detail-grid"><DetailItem label="Dokumentasi" value={hotspot.documentName || "Tidak ada dokumen"} link={hotspot.documentUrl} /><DetailItem label="Status pemeriksaan" value={displayQcStatus(hotspot.qc)} /><DetailItem label="Pemeriksa" value={hotspot.qcInspector} /><DetailItem label="Tanggal pemeriksaan" value={hotspot.qcDate} /></div><DetailItem label="Catatan pemeriksaan" value={hotspot.qcNote} wide /></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Tutup</button>{canReview && <button type="button" className="button button-primary" onClick={onReview}>Buka pemeriksaan kualitas</button>}</div></section></div>;
 }
 
 function DetailItem({ label, value, link, wide }: { label: string; value?: string; link?: string; wide?: boolean }) {
@@ -530,7 +545,7 @@ function QcModal({ hotspot, onClose, onSave }: { hotspot: Hotspot; onClose: () =
     setSaving(true);
     try { await onSave({ status, note, kelengkapan, duplikasi, kroscek, pemeriksa, tanggal, document }); } finally { setSaving(false); }
   }
-  return <div className="user-modal-backdrop"><section className="user-modal qc-modal" role="dialog" aria-modal="true"><div className="user-modal-header"><div><p className="eyebrow">Quality control</p><h2>Review Data Hotspot</h2><p>{hotspot.name} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="qc-detail-grid"><div><small>ID Data</small><strong>{hotspot.id}</strong></div><div><small>Status fisik</small><strong>{hotspot.status}</strong></div><div><small>Populasi kunci</small><strong>{hotspot.population}</strong></div><div><small>Koordinat</small><strong>{hotspot.coordinates || "-"}</strong></div></div><form onSubmit={submit} className="qc-form"><label>Pemeriksaan kelengkapan<select value={kelengkapan} onChange={(event) => setKelengkapan(event.target.value)}><option value="lengkap">Lengkap &amp; Sesuai Standar</option><option value="perlu_perbaikan">Perlu Perbaikan / Isian Belum Lengkap</option></select></label><label>Indikasi duplikasi<select value={duplikasi} onChange={(event) => setDuplikasi(event.target.value)}><option value="tidak_ada">Tidak Ada Indikasi Duplikasi</option><option value="ada">Ada Indikasi Duplikasi</option></select></label><label>Kroscek antar enumerator<select value={kroscek} onChange={(event) => setKroscek(event.target.value)}><option value="sesuai">Sesuai Hasil Kroscek</option><option value="perlu_klarifikasi">Perlu Klarifikasi Ulang</option></select></label><label>Status data akhir<select value={status} onChange={(event) => setStatus(event.target.value as Hotspot["qc"])}><option value="Valid">Valid - Masuk Database Utama</option><option value="Pending">Perlu Tindak Lanjut</option><option value="Perlu perbaikan">Tidak Valid - Perlu Perbaikan</option></select></label><label>Catatan analis<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} /></label><label>Dokumentasi persetujuan QC<input type="file" accept="image/*,.pdf,.doc,.docx" onChange={(event) => setDocument(event.target.files?.[0])} /></label><div className="qc-form-grid"><label>Nama pemeriksa<input value={pemeriksa} onChange={(event) => setPemeriksa(event.target.value)} required /></label><label>Tanggal pemeriksaan<input type="date" value={tanggal} onChange={(event) => setTanggal(event.target.value)} required /></label></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan hasil QC"}</button></div></form></section></div>;
+  return <div className="user-modal-backdrop"><section className="user-modal qc-modal" role="dialog" aria-modal="true"><div className="user-modal-header"><div><p className="eyebrow">Pemeriksaan kualitas</p><h2>Pemeriksaan Data Hotspot</h2><p>{hotspot.name} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="qc-detail-grid"><div><small>ID Data</small><strong>{hotspot.id}</strong></div><div><small>Status hotspot</small><strong>{hotspot.status}</strong></div><div><small>Populasi kunci</small><strong>{hotspot.population}</strong></div><div><small>Koordinat</small><strong>{hotspot.coordinates || "-"}</strong></div></div><form onSubmit={submit} className="qc-form"><label>Pemeriksaan kelengkapan<select value={kelengkapan} onChange={(event) => setKelengkapan(event.target.value)}><option value="lengkap">Lengkap &amp; sesuai standar</option><option value="perlu_perbaikan">Perlu perbaikan / isian belum lengkap</option></select></label><label>Indikasi duplikasi<select value={duplikasi} onChange={(event) => setDuplikasi(event.target.value)}><option value="tidak_ada">Tidak ada indikasi duplikasi</option><option value="ada">Ada indikasi duplikasi</option></select></label><label>Kroscek antar enumerator<select value={kroscek} onChange={(event) => setKroscek(event.target.value)}><option value="sesuai">Sesuai hasil kroscek</option><option value="perlu_klarifikasi">Perlu klarifikasi ulang</option></select></label><label>Status akhir data<select value={status} onChange={(event) => setStatus(event.target.value as Hotspot["qc"])}><option value="Valid">Valid - Siap difinalkan</option><option value="Pending">Menunggu tindak lanjut</option><option value="Perlu perbaikan">Perlu perbaikan</option></select></label><label>Catatan pemeriksaan<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} /></label><label>Dokumen pendukung persetujuan<input type="file" accept="image/*,.pdf,.doc,.docx" onChange={(event) => setDocument(event.target.files?.[0])} /></label><div className="qc-form-grid"><label>Nama pemeriksa<input value={pemeriksa} onChange={(event) => setPemeriksa(event.target.value)} required /></label><label>Tanggal pemeriksaan<input type="date" value={tanggal} onChange={(event) => setTanggal(event.target.value)} required /></label></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan hasil pemeriksaan"}</button></div></form></section></div>;
 }
 /* eslint-enable @typescript-eslint/no-unused-vars */
 function UserManagementModal({ users, loading, error, editingUser, creatingUser, onClose, onAdd, onCancelEdit, onEdit, onSave, onCreate, onDelete }: { users: UserProfile[]; loading: boolean; error: string; editingUser: UserProfile | null; creatingUser: boolean; onClose: () => void; onAdd: () => void; onCancelEdit: () => void; onEdit: (user: UserProfile | null) => void; onSave: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; onCreate: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; onDelete: (user: UserProfile) => void }) {
@@ -563,7 +578,7 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
       <section className="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-management-title">
         <div className="user-modal-header">
           <div>
-            <p className="eyebrow">Admin control</p>
+            <p className="eyebrow">Panel administrator</p>
             <h2 id="user-management-title">Manajemen User</h2>
             <p>Kelola profil, username, email, dan role pengguna.</p>
             {!isFormOpen && <button type="button" className="button button-primary" onClick={() => { setRoleOverride(null); onAdd(); }}>＋ Tambah user</button>}
@@ -574,12 +589,12 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
         {isFormOpen ? (
           <form className="user-edit-form" onSubmit={submitUser} aria-busy={savingUser}>
             <label>Username<input name="username" defaultValue={editingUser?.username || ""} required /></label>
-            <label>Email Firebase<input name="email" type="email" defaultValue={editingUser?.email || ""} required /></label>
+            <label>Email<input name="email" type="email" defaultValue={editingUser?.email || ""} required /></label>
             <label>Nama<input name="nama" defaultValue={editingUser?.nama || ""} required /></label>
             {creatingUser && <label>Password awal<input name="password" type="password" autoComplete="new-password" minLength={6} required /></label>}
             <label>Role<select name="role" value={currentRole} onChange={(event) => setRoleOverride({ userId: editingUser?.id || null, role: event.target.value })}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="koordinator">Koordinator</option><option value="supervisor">Supervisor</option><option value="enumerator">Enumerator</option></select></label>
             {(creatingUser || editingUser) && currentRole === "enumerator" && <label>Organisasi Enumerator<select name="organisasi" defaultValue={editingUser?.organisasi || ""} required><option value="">Pilih organisasi</option>{organizationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
-            {savingUser && <div className="form-saving-indicator form-wide" role="status" aria-live="polite"><span className="form-saving-brand" aria-hidden="true" /><strong>Menyimpan user...</strong><small>{creatingUser ? "Membuat akun Firebase dan profil user." : "Memperbarui profil user."}</small><i className="form-saving-track" aria-hidden="true" /></div>}
+            {savingUser && <div className="form-saving-indicator form-wide" role="status" aria-live="polite"><span className="form-saving-brand" aria-hidden="true" /><strong>Menyimpan user...</strong><small>{creatingUser ? "Membuat akun dan profil user." : "Memperbarui profil user."}</small><i className="form-saving-track" aria-hidden="true" /></div>}
             <div className="user-modal-actions">
               <button type="button" className="button button-secondary" onClick={() => { setRoleOverride(null); onCancelEdit(); }} disabled={savingUser}>Batal</button>
               <button type="submit" className="button button-primary" disabled={savingUser}>{savingUser ? "Menyimpan..." : creatingUser ? "Buat user" : "Simpan profil"}</button>
@@ -674,7 +689,7 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!db) return setError("Firestore belum siap.");
+    if (!db) return setError("Sistem data belum siap.");
     setSaving(true);
     setError("");
     const form = new FormData(event.currentTarget);
@@ -787,7 +802,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         try {
           result = JSON.parse(responseText) as { error?: string; kodeHotspot?: string };
         } catch {
-          throw new Error(`Server gagal membuat respons JSON (HTTP ${response.status}). Periksa konfigurasi Firebase Admin dan log Vercel.`);
+          throw new Error("Layanan belum dapat memproses permintaan. Silakan coba lagi atau hubungi administrator.");
         }
         if (!response.ok) throw new Error(result.error || "Kode hotspot gagal dibuat.");
         if (!result.kodeHotspot) throw new Error("Server tidak mengembalikan kode hotspot.");
@@ -907,7 +922,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!db) return setError("Firestore belum siap.");
+    if (!db) return setError("Sistem data belum siap.");
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
     if (!normalizeOrganization(profile?.organisasi)) return setError("Organisasi pada profil Anda belum diatur. Hubungi admin sebelum mengirim data.");
     if (hotspotCodeLoading) return setError("Tunggu sampai kode hotspot selesai dibuat.");
@@ -999,7 +1014,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     }
   }
 
-  return <div className="user-modal-backdrop"><section className="user-modal enumerator-modal" role="dialog" aria-modal="true" aria-labelledby="enumerator-form-title"><div className="user-modal-header"><div><p className="eyebrow">Pendataan lapangan</p><h2 id="enumerator-form-title">Input Data Pemetaan</h2><p>Field mengikuti instrumen pemetaan. Data masuk Firestore, dokumen masuk Google Drive.</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div>{error && <p className="login-error user-modal-error">{error}</p>}<form className="user-edit-form enumerator-form" onSubmit={submit}><p className="form-section-title form-wide">A. Informasi Pelaksanaan</p><label>Nama Enumerator<input value={profile?.nama || user.email || ""} readOnly /></label><label>Organisasi / Komunitas Pelaksana<select name="organisasi" defaultValue="" required><option value="">Pilih organisasi</option><option value="lgi">Yayasan Lingkar Gagasan Indonesia (LGI)</option><option value="igama">Yayasan IGAMA</option><option value="wamarapa">Wamarapa</option><option value="fatayat_nu">SSR Fatayat NU Jawa Timur (PENASUN)</option></select></label><p className="form-section-title form-wide">B. Identitas Hotspot</p><label>Nama Hotspot<input name="namaHotspot" required /></label><label>Kecamatan<input name="kecamatan" required /></label><label>Kelurahan<input name="kelurahan" required /></label><label className="form-wide">Alamat atau Deskripsi Lokasi<textarea name="alamat" rows={2} required /></label><label className="form-wide">Titik Koordinat GPS<div className="gps-input"><input value={gps} placeholder="Tekan Gunakan GPS" readOnly required /><button type="button" className="button button-secondary" onClick={useCurrentLocation}>⌖ Gunakan GPS</button></div><small>Koordinat diambil dari lokasi perangkat.</small></label><label className="form-wide">Foto Dokumentasi Lokasi<input name="document" type="file" accept="image/*" capture="environment" required /></label><p className="form-section-title form-wide">C. Karakteristik Hotspot</p><label>Status Hotspot<select name="statusHotspot" defaultValue="" required><option value="">Pilih status</option><option value="aktif">Aktif</option><option value="baru">Baru</option><option value="tidak_aktif">Tidak Aktif</option><option value="perlu_klarifikasi">Perlu Klarifikasi</option><option value="lama">Lama</option></select></label><fieldset><legend>Kategori Populasi Kunci *</legend><div className="checkbox-grid">{[["lsl", "LSL"], ["transgender", "Transgender"], ["idu", "IDU / PWID"], ["pspl___tl__pekerja_seks_perempuan", "PSPL / TL"]].map(([value, label]) => <label key={value}><input type="checkbox" name="populasiKunci" value={value} /> {label}</label>)}</div></fieldset><label>Tipe Lokasi Utama<select name="tipeLokasi" defaultValue="" required><option value="">Pilih tipe lokasi</option><option value="ruang_publik">Ruang Publik / Area Terbuka / Jalanan</option><option value="tempat_makan_hiburan">Tempat Makan / Nongkrong / Hiburan</option><option value="akomodasi_private">Akomodasi / Private Venue</option><option value="perawatan_kebugaran">Perawatan & Kebugaran</option><option value="platform_virtual">Platform Virtual / Online</option><option value="lainnya">Lainnya</option></select></label><label>Detail Sub-Tipe Lokasi<input name="subTipeLokasi" placeholder="Isi sub-tipe lokasi" required /></label><label>Tipe Lokasi Lainnya<input name="tipeLokasiLainnya" /></label><fieldset><legend>Waktu Aktivitas Dominan *</legend><div className="checkbox-grid">{[["pagi", "Pagi"], ["siang", "Siang"], ["sore", "Sore"], ["malam", "Malam"]].map(([value, label]) => <label key={value}><input type="checkbox" name="waktuAktivitas" value={value} /> {label}</label>)}</div></fieldset><label>Jumlah Populasi<input name="estimasiJumlahPopulasi" type="number" min="0" defaultValue="0" /></label><label>Jumlah Diedukasi<input name="jumlahDiedukasi" type="number" min="0" defaultValue="0" /></label><label>Jumlah Tes HIV<input name="jumlahTesHiv" type="number" min="0" defaultValue="0" /></label><label>Jumlah HIV+<input name="jumlahHivPositif" type="number" min="0" defaultValue="0" /></label><label className="form-wide">Catatan Tambahan Temuan Lapangan<textarea name="catatan" rows={2} /></label><p className="form-section-title form-wide">D. Informasi Hasil Pemetaan</p><label>Sumber Informasi<select name="sumberInformasi" defaultValue="" required><option value="">Pilih sumber</option><option value="populasi_kunci">Populasi kunci</option><option value="tokoh_kunci">Tokoh kunci</option><option value="observasi">Observasi Lapangan Langsung</option><option value="lainnya">Lainnya</option></select></label><label>No. HP Informan<input name="noHpInforman" type="tel" pattern="[0-9+]{9,15}" required /></label><label>Keterangan Informan<input name="keteranganAktivitas" required /></label><label className="form-wide">Kondisi Hotspot Saat Pemetaan<textarea name="kondisiSaatPemetaan" rows={2} required /></label><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan Data Pemetaan"}</button></div></form></section></div>;
+  return <div className="user-modal-backdrop"><section className="user-modal enumerator-modal" role="dialog" aria-modal="true" aria-labelledby="enumerator-form-title"><div className="user-modal-header"><div><p className="eyebrow">Pendataan lapangan</p><h2 id="enumerator-form-title">Input Data Pemetaan</h2><p>Field mengikuti instrumen pemetaan agar data tetap konsisten dan mudah dipantau.</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div>{error && <p className="login-error user-modal-error">{error}</p>}<form className="user-edit-form enumerator-form" onSubmit={submit}><p className="form-section-title form-wide">A. Informasi Pelaksanaan</p><label>Nama Enumerator<input value={profile?.nama || user.email || ""} readOnly /></label><label>Organisasi / Komunitas Pelaksana<select name="organisasi" defaultValue="" required><option value="">Pilih organisasi</option><option value="lgi">Yayasan Lingkar Gagasan Indonesia (LGI)</option><option value="igama">Yayasan IGAMA</option><option value="wamarapa">Wamarapa</option><option value="fatayat_nu">SSR Fatayat NU Jawa Timur (PENASUN)</option></select></label><p className="form-section-title form-wide">B. Identitas Hotspot</p><label>Nama Hotspot<input name="namaHotspot" required /></label><label>Kecamatan<input name="kecamatan" required /></label><label>Kelurahan<input name="kelurahan" required /></label><label className="form-wide">Alamat atau Deskripsi Lokasi<textarea name="alamat" rows={2} required /></label><label className="form-wide">Titik Koordinat GPS<div className="gps-input"><input value={gps} placeholder="Tekan Gunakan GPS" readOnly required /><button type="button" className="button button-secondary" onClick={useCurrentLocation}>⌖ Gunakan GPS</button></div><small>Koordinat diambil dari lokasi perangkat.</small></label><label className="form-wide">Foto Dokumentasi Lokasi<input name="document" type="file" accept="image/*" capture="environment" required /></label><p className="form-section-title form-wide">C. Karakteristik Hotspot</p><label>Status Hotspot<select name="statusHotspot" defaultValue="" required><option value="">Pilih status</option><option value="aktif">Aktif</option><option value="baru">Baru</option><option value="tidak_aktif">Tidak Aktif</option><option value="perlu_klarifikasi">Perlu Klarifikasi</option><option value="lama">Lama</option></select></label><fieldset><legend>Kategori Populasi Kunci *</legend><div className="checkbox-grid">{[["lsl", "LSL"], ["transgender", "Transgender"], ["idu", "IDU / PWID"], ["pspl___tl__pekerja_seks_perempuan", "PSPL / TL"]].map(([value, label]) => <label key={value}><input type="checkbox" name="populasiKunci" value={value} /> {label}</label>)}</div></fieldset><label>Tipe Lokasi Utama<select name="tipeLokasi" defaultValue="" required><option value="">Pilih tipe lokasi</option><option value="ruang_publik">Ruang Publik / Area Terbuka / Jalanan</option><option value="tempat_makan_hiburan">Tempat Makan / Nongkrong / Hiburan</option><option value="akomodasi_private">Akomodasi / Private Venue</option><option value="perawatan_kebugaran">Perawatan & Kebugaran</option><option value="platform_virtual">Platform Virtual / Online</option><option value="lainnya">Lainnya</option></select></label><label>Detail Sub-Tipe Lokasi<input name="subTipeLokasi" placeholder="Isi sub-tipe lokasi" required /></label><label>Tipe Lokasi Lainnya<input name="tipeLokasiLainnya" /></label><fieldset><legend>Waktu Aktivitas Dominan *</legend><div className="checkbox-grid">{[["pagi", "Pagi"], ["siang", "Siang"], ["sore", "Sore"], ["malam", "Malam"]].map(([value, label]) => <label key={value}><input type="checkbox" name="waktuAktivitas" value={value} /> {label}</label>)}</div></fieldset><label>Jumlah Populasi<input name="estimasiJumlahPopulasi" type="number" min="0" defaultValue="0" /></label><label>Jumlah Diedukasi<input name="jumlahDiedukasi" type="number" min="0" defaultValue="0" /></label><label>Jumlah Tes HIV<input name="jumlahTesHiv" type="number" min="0" defaultValue="0" /></label><label>Jumlah HIV+<input name="jumlahHivPositif" type="number" min="0" defaultValue="0" /></label><label className="form-wide">Catatan Tambahan Temuan Lapangan<textarea name="catatan" rows={2} /></label><p className="form-section-title form-wide">D. Informasi Hasil Pemetaan</p><label>Sumber Informasi<select name="sumberInformasi" defaultValue="" required><option value="">Pilih sumber</option><option value="populasi_kunci">Populasi kunci</option><option value="tokoh_kunci">Tokoh kunci</option><option value="observasi">Observasi Lapangan Langsung</option><option value="lainnya">Lainnya</option></select></label><label>No. HP Informan<input name="noHpInforman" type="tel" pattern="[0-9+]{9,15}" required /></label><label>Keterangan Informan<input name="keteranganAktivitas" required /></label><label className="form-wide">Kondisi Hotspot Saat Pemetaan<textarea name="kondisiSaatPemetaan" rows={2} required /></label><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan Data Pemetaan"}</button></div></form></section></div>;
 }
 
 const MAX_UPLOAD_FILE_BYTES = 2_000_000;
@@ -1093,27 +1108,27 @@ function LoginScreen({ onLogin, loginError, setLoginError }: { onLogin: (user: U
       return;
     }
     if (!firebaseConfigured) {
-      setLoginError("Firebase belum dikonfigurasi. Isi file .env.local terlebih dahulu.");
+      setLoginError("Sistem autentikasi belum dikonfigurasi. Hubungi administrator.");
       return;
     }
     if (!auth) {
-      setLoginError("Firebase belum siap. Periksa konfigurasi .env.local.");
+      setLoginError("Sistem autentikasi belum siap. Hubungi administrator.");
       return;
     }
     try {
       if (!db) {
-        setLoginError("Firestore belum siap. Periksa konfigurasi Firebase.");
+        setLoginError("Sistem data belum siap. Periksa konfigurasi aplikasi.");
         return;
       }
       const userQuery = query(collection(db, "user"), where("username", "==", username.trim()), limit(1));
       const userSnapshot = await getDocs(userQuery);
       if (userSnapshot.empty) {
-        setLoginError(`Username "${username.trim()}" tidak ditemukan di collection user.`);
+        setLoginError(`Username "${username.trim()}" tidak ditemukan.`);
         return;
       }
       const profile = userSnapshot.docs[0]?.data() as { email?: string } | undefined;
       if (!profile?.email) {
-        setLoginError("Profil username ditemukan, tetapi field email belum diisi di Firestore.");
+        setLoginError("Profil username ditemukan, tetapi data akun belum lengkap.");
         return;
       }
       const result = await signInWithEmailAndPassword(auth, profile.email, password);
@@ -1121,14 +1136,13 @@ function LoginScreen({ onLogin, loginError, setLoginError }: { onLogin: (user: U
     } catch (error) {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
       if (code === "permission-denied") {
-        setLoginError("Firestore menolak akses. Periksa Firestore Rules untuk pembacaan collection user.");
+        setLoginError("Akses data ditolak. Periksa status akun Anda atau hubungi administrator.");
       } else if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
-        setLoginError("Password Firebase tidak cocok untuk username ini.");
+        setLoginError("Password tidak cocok untuk username ini.");
       } else {
-        setLoginError(`Login gagal${code ? ` (${code})` : ""}. Periksa username, field email, dan Firebase Authentication.`);
+        setLoginError("Login gagal. Periksa kembali username dan password Anda, atau hubungi administrator.");
       }
     }
   }
 
-  return <main className="login-page"><div className="login-layout"><section className="login-intro"><div className="login-brand-mark">+</div><p className="eyebrow login-eyebrow">Data Intelligence Platform</p><h1>Pemetaan Hotspot Malang</h1><p className="login-description">Kelola data lapangan, pantau persebaran, dan pastikan setiap pendataan melewati proses quality control yang terukur.</p><div className="login-features"><div><span>✓</span>Dashboard monitoring terpusat</div><div><span>✓</span>Validasi QC berbasis data</div><div><span>✓</span>Sinkronisasi dengan KoboToolbox</div></div><div className="login-orbit login-orbit-one" /><div className="login-orbit login-orbit-two" /></section><section className="login-form"><p className="eyebrow">Secure access</p><h2>Masuk ke dashboard</h2><p className="login-form-copy">Gunakan username dan sandi yang terdaftar untuk melanjutkan.</p><form onSubmit={submitLogin}><label htmlFor="username">Username</label><div className="login-input"><span>◉</span><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Masukkan username" /></div><label htmlFor="password">Sandi</label><div className="login-input"><span>▣</span><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Masukkan sandi" /></div>{loginError && <p className="login-error" role="alert">{loginError}</p>}<button className="login-submit" type="submit">Masuk ke dashboard <span>→</span></button></form><p className="login-footer">Lingga Indonesia <span>•</span> Pemetaan Kota Malang 2026</p></section></div></main>;
-}
+  return <main className="login-page"><div className="login-layout"><section className="login-intro"><div className="login-brand-mark">+</div><p className="eyebrow login-eyebrow">Platform Pemetaan Data</p><h1>Pemetaan Hotspot Malang</h1><p className="login-description">Kelola data lapangan, pantau persebaran, dan pastikan setiap pendataan melalui pemeriksaan kualitas yang terukur.</p><div className="login-features"><div><span>✓</span>Pemantauan data terpusat</div><div><span>✓</span>Pemeriksaan kualitas data</div><div><span>✓</span>Pembaruan data lapangan</div></div><div className="login-orbit login-orbit-one" /><div className="login-orbit login-orbit-two" /></section><section className="login-form"><p className="eyebrow">Akses pengguna</p><h2>Masuk ke dashboard</h2><p className="login-form-copy">Gunakan username dan sandi yang terdaftar untuk melanjutkan.</p><form onSubmit={submitLogin}><label htmlFor="username">Username</label><div className="login-input"><span>◉</span><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Masukkan username" /></div><label htmlFor="password">Sandi</label><div className="login-input"><span>▣</span><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Masukkan sandi" /></div>{loginError && <p className="login-error" role="alert">{loginError}</p>}<button className="login-submit" type="submit">Masuk ke dashboard <span>→</span></button></form><p className="login-footer">Lingga Indonesia <span>•</span> Pemetaan Kota Malang 2026</p></section></div></main>;}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   const gasUploadUrl = process.env.GAS_UPLOAD_URL;
-  if (!gasUploadUrl) return NextResponse.json({ message: "GAS_UPLOAD_URL belum dikonfigurasi." }, { status: 500 });
+  if (!gasUploadUrl) return NextResponse.json({ message: "Layanan dokumen belum siap. Silakan hubungi administrator." }, { status: 500 });
 
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 3_000_000) {
@@ -28,8 +28,11 @@ export async function POST(request: Request) {
       body: JSON.stringify({ ...payload, secret: (process.env.GAS_UPLOAD_SECRET || "").trim().replace(/^['"]|['"]$/g, "") }),
     });
     const result = await response.json();
-    return NextResponse.json(result, { status: response.ok && result.success ? 200 : 400 });
+    if (!response.ok || !result.success) {
+      return NextResponse.json({ success: false, message: "Dokumen gagal disimpan. Silakan coba lagi atau hubungi administrator." }, { status: 400 });
+    }
+    return NextResponse.json(result);
   } catch {
-    return NextResponse.json({ message: "Server gagal meneruskan upload ke Apps Script." }, { status: 502 });
+    return NextResponse.json({ message: "Dokumen gagal disimpan. Silakan coba lagi atau hubungi administrator." }, { status: 502 });
   }
 }

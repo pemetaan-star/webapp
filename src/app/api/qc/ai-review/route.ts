@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     const profile = await adminDb.collection("user").doc(uid).get();
     const role = String(profile.get("role") || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
     const canReview = role === "admin" || role.includes("koor") || role.includes("dataanalis") || role.includes("dataanalyst");
-    if (!canReview) return Response.json({ error: "Fitur AI QC hanya untuk Koordinator, Data Analis, dan Admin." }, { status: 403 });
+    if (!canReview) return Response.json({ error: "Saran pemeriksaan hanya tersedia untuk Koordinator, Data Analis, dan Administrator." }, { status: 403 });
   } catch {
     return Response.json({ error: "Profil reviewer tidak dapat diverifikasi." }, { status: 500 });
   }
@@ -174,6 +174,6 @@ export async function POST(request: Request) {
     };
     return Response.json({ suggestion });
   } catch {
-    return Response.json({ error: "AI QC gagal meninjau data. Coba lagi." }, { status: 502 });
+    return Response.json({ error: "Saran pemeriksaan gagal dibuat. Silakan coba lagi." }, { status: 502 });
   }
 }
