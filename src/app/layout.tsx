@@ -8,6 +8,10 @@ const spaceGrotesk = Space_Grotesk({ variable: "--font-space-grotesk", subsets: 
 export const metadata: Metadata = {
   title: "Dashboard Pemetaan Hotspot Malang 2026",
   description: "Monitoring dan quality control pemetaan hotspot Kota Malang.",
+  icons: {
+    icon: "/lingga-indonesia-icon.svg",
+    apple: "/icons/lingga-180.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
