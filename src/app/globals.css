@@ -232,3 +232,31 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .install-notice-close { align-self: flex-start; flex: 0 0 auto; width: 24px; height: 24px; margin: -5px -5px 0 0; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 1.15rem; line-height: 1; cursor: pointer; }
 .install-notice-close:hover { background: #f3f6f8; }
 @media (max-width: 600px) { .install-notice { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); gap: 9px; padding: 11px; }.install-notice > img { width: 38px; height: 38px; }.install-notice-copy strong { font-size: .7rem; }.install-notice-copy p { font-size: .62rem; }.install-notice-action { padding: 7px 9px; font-size: .65rem; } }
+
+.app-opening-splash { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; overflow: hidden; color: #fff; background: radial-gradient(ellipse at 50% 42%, #163c58 0, #101f38 44%, #0b1427 100%); animation: splash-arrive .35s ease-out both; }
+.app-opening-splash::before, .app-opening-splash::after { position: absolute; width: min(78vw, 680px); aspect-ratio: 1; border: 1px solid #ffffff0c; border-radius: 50%; content: ""; }
+.app-opening-splash::after { width: min(58vw, 500px); border-color: #71ddd31a; }
+.splash-card { position: relative; z-index: 1; display: flex; width: min(360px, calc(100vw - 44px)); flex-direction: column; align-items: center; padding: 32px 26px 26px; text-align: center; animation: splash-card-arrive .75s cubic-bezier(.2,.8,.2,1) both; }
+.splash-logo-wrap { position: relative; display: grid; width: 148px; height: 148px; place-items: center; margin-bottom: 24px; }
+.splash-logo-wrap img { position: relative; z-index: 1; display: block; width: 116px; height: 116px; border-radius: 50%; box-shadow: 0 16px 50px #030a1b70; }
+.splash-logo-glow { position: absolute; inset: 0; border: 1px solid #71ddd355; border-radius: 50%; animation: splash-pulse 2.1s ease-out infinite; }
+.splash-eyebrow { margin: 0 0 9px; color: #86ded7; font-size: .63rem; font-weight: 700; letter-spacing: .24em; }
+.splash-card h1 { margin: 0; color: #fff; font: 600 clamp(1.8rem, 6vw, 2.2rem)/1.1 var(--font-space-grotesk), sans-serif; letter-spacing: -.055em; }
+.splash-location { margin: 9px 0 28px; color: #d1dbeaab; font-size: .82rem; letter-spacing: .06em; }
+.splash-progress { width: 178px; height: 3px; overflow: hidden; border-radius: 3px; background: #ffffff20; }
+.splash-progress span { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #71ddd3, #fff); box-shadow: 0 0 14px #71ddd3; animation: splash-progress 4.5s cubic-bezier(.18,.56,.4,1) both; }
+.splash-status { margin: 12px 0 0; color: #d1dbea9c; font-size: .67rem; letter-spacing: .035em; }
+.splash-orbit { position: absolute; z-index: 0; width: min(68vw, 570px); aspect-ratio: 1; border: 1px solid #ffffff0b; border-radius: 50%; animation: splash-orbit 32s linear infinite; }
+.splash-orbit::before { position: absolute; top: 16%; left: 18%; width: 5px; height: 5px; border-radius: 50%; background: #71ddd3b0; box-shadow: 0 0 14px 3px #71ddd340; content: ""; }
+.splash-orbit-inner { width: min(48vw, 410px); border-color: #71ddd310; animation-direction: reverse; animation-duration: 24s; }
+.splash-orbit-inner::before { top: auto; right: 13%; bottom: 23%; left: auto; width: 4px; height: 4px; background: #fff9; }
+.splash-corner { position: absolute; width: 46px; height: 46px; border-color: #71ddd34d; border-style: solid; }
+.splash-corner-top { top: 28px; left: 28px; border-width: 1px 0 0 1px; }
+.splash-corner-bottom { right: 28px; bottom: 28px; border-width: 0 1px 1px 0; }
+@keyframes splash-arrive { from { opacity: 0; } to { opacity: 1; } }
+@keyframes splash-card-arrive { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes splash-pulse { 0% { opacity: 0; transform: scale(.76); } 20% { opacity: .75; } 100% { opacity: 0; transform: scale(1.14); } }
+@keyframes splash-progress { from { transform: translateX(-110%); } to { transform: translateX(250%); } }
+@keyframes splash-orbit { to { transform: rotate(360deg); } }
+@media (max-width: 600px) { .splash-logo-wrap { width: 132px; height: 132px; }.splash-logo-wrap img { width: 104px; height: 104px; }.splash-location { margin-bottom: 24px; }.splash-corner-top { top: 16px; left: 16px; }.splash-corner-bottom { right: 16px; bottom: 16px; } }
+@media (prefers-reduced-motion: reduce) { .app-opening-splash, .splash-card, .splash-logo-glow, .splash-orbit, .splash-progress span { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
