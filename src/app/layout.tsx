@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
+import { InstallAppNotice } from "@/app/components/install-app-notice";
 import "./globals.css";
 
 const dmSans = DM_Sans({ variable: "--font-dm-sans", subsets: ["latin"] });
@@ -15,5 +16,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
-  return <html lang="id" className={`${dmSans.variable} ${spaceGrotesk.variable}`}><body>{children}</body></html>;
+  return <html lang="id" className={`${dmSans.variable} ${spaceGrotesk.variable}`}><body>{children}<InstallAppNotice /></body></html>;
 }

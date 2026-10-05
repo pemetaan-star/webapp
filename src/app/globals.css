@@ -221,3 +221,14 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 	.reviewer-dashboard .table-panel td:nth-child(3) strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.reviewer-dashboard .table-footer .button-link { display: none; }
 }
+
+.install-notice { position: fixed; z-index: 19; right: 24px; bottom: max(24px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 12px; width: min(420px, calc(100vw - 32px)); padding: 14px; border: 1px solid #e4eaf0; border-radius: 14px; background: #fff; box-shadow: 0 14px 44px #14243b2e; animation: login-arrive .25s ease both; }
+.install-notice > img { flex: 0 0 auto; border-radius: 9px; }
+.install-notice-copy { min-width: 0; flex: 1; }
+.install-notice-copy strong { display: block; color: var(--ink); font-size: .78rem; line-height: 1.35; }
+.install-notice-copy p { margin: 4px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.45; }
+.install-notice-action { flex: 0 0 auto; padding: 8px 11px; border: 0; border-radius: 8px; color: #fff; background: var(--teal); font: inherit; font-size: .7rem; font-weight: 700; cursor: pointer; }
+.install-notice-action:hover { background: #0b887f; }
+.install-notice-close { align-self: flex-start; flex: 0 0 auto; width: 24px; height: 24px; margin: -5px -5px 0 0; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 1.15rem; line-height: 1; cursor: pointer; }
+.install-notice-close:hover { background: #f3f6f8; }
+@media (max-width: 600px) { .install-notice { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); gap: 9px; padding: 11px; }.install-notice > img { width: 38px; height: 38px; }.install-notice-copy strong { font-size: .7rem; }.install-notice-copy p { font-size: .62rem; }.install-notice-action { padding: 7px 9px; font-size: .65rem; } }
