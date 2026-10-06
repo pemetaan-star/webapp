@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -96,7 +97,7 @@ export function InstallAppNotice() {
 
   return (
     <aside className="install-notice" aria-label="Instal aplikasi">
-      <img src="/lingga-indonesia-icon.svg" alt="" width="44" height="44" />
+      <Image src="/lingga-indonesia-icon.svg" alt="" width={44} height={44} />
       <div className="install-notice-copy">
         <strong>Pasang aplikasi Pemetaan Hotspot</strong>
         <p>{installError || (showInstructions ? isIos ? "Tekan Bagikan, lalu pilih “Tambahkan ke Layar Utama”." : "Buka menu browser, lalu pilih “Instal aplikasi”." : "Buka lebih cepat dari layar utama perangkat Anda.")}</p>

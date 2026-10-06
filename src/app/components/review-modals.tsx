@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, type FormEvent } from "react";
 
 type ReviewHotspot = {
@@ -36,6 +37,15 @@ type ReviewHotspot = {
   qcNote?: string;
   qcInspector?: string;
   qcDate?: string;
+  createdAt?: string;
+  workflowHistory?: Array<{
+    stage: string;
+    role: string;
+    uid: string;
+    actorName?: string;
+    at: string;
+    note?: string;
+  }>;
 };
 
 type QcPayload = {
@@ -133,6 +143,41 @@ export function displayPopulation(value?: string) {
   }).join(", ");
 }
 
+function WorkflowTimeline({ hotspot }: { hotspot: ReviewHotspot }) {
+  const events = [
+    ...(hotspot.createdAt ? [{
+      stage: "submitted",
+      role: "Enumerator",
+      uid: "",
+      actorName: hotspot.enumeratorName || hotspot.enumeratorUsername || "",
+      at: hotspot.createdAt,
+      note: "Data pemetaan dikirim.",
+    }] : []),
+    ...(hotspot.workflowHistory || []),
+  ].sort((first, second) => {
+    const firstTime = Date.parse(first.at);
+    const secondTime = Date.parse(second.at);
+    return (Number.isFinite(secondTime) ? secondTime : 0) - (Number.isFinite(firstTime) ? firstTime : 0);
+  });
+
+  if (!events.length) return <p className="enumerator-progress-empty">Riwayat tahapan belum tersedia.</p>;
+
+  return <ol className="workflow-timeline">
+    {events.map((event, index) => {
+      const time = Date.parse(event.at);
+      const actor = event.actorName || [formatStoredLabel(event.role), event.uid && `ID ${event.uid}`].filter(Boolean).join(" · ") || "Pengguna";
+      return <li key={`${event.at}-${event.uid}-${index}`}>
+        <span className="workflow-timeline-marker" aria-hidden="true" />
+        <div className="workflow-timeline-content">
+          <strong>{workflowStageLabels[event.stage] || formatStoredLabel(event.stage)}</strong>
+          <small>{Number.isFinite(time) ? new Date(time).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "Waktu tidak tercatat"} · {actor}</small>
+          {event.note && <p>{event.note}</p>}
+        </div>
+      </li>;
+    })}
+  </ol>;
+}
+
 function displayLocation(value?: string, labels: Record<string, string> = {}) {
   if (!value) return value;
   const trimmed = value.trim();
@@ -152,7 +197,7 @@ function displayReviewValue(label: string, value?: string) {
 export function ReviewDetailModal({ hotspot, canReview, onClose, onReview }: { hotspot: ReviewHotspot; canReview: boolean; onClose: () => void; onReview: () => void }) {
   const documents = hotspot.documents?.length ? hotspot.documents : hotspot.documentName ? [{ name: hotspot.documentName, fileId: hotspot.documentFileId }] : [];
   const qcValues: Array<[string, string | undefined]> = [["Status pemeriksaan", hotspot.qc], ["Tahapan proses", hotspot.workflowStage], ["Kelengkapan", hotspot.qcKelengkapan], ["Duplikasi", hotspot.qcDuplikasi], ["Kroscek", hotspot.qcKroscek], ["Pemeriksa", hotspot.qcInspector], ["Tanggal pemeriksaan", hotspot.qcDate]];
-  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">x</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={displayPopulation(hotspot.population)} /><DetailItem label="Tipe lokasi" value={[displayLocation(hotspot.locationType, locationTypeLabels), displayLocation(hotspot.locationSubtype, locationSubtypeLabels)].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /><DetailItem label="Tes HIV / HIV+" value={`${hotspot.hivTests || 0} / ${hotspot.hivPositive || 0}`} /></div><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={displayLocation(hotspot.informationSource, informationSourceLabels)} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen pendukung</p>{documents.length ? <div className="document-preview-grid">{documents.map((document, index) => { const previewUrl = document.fileId ? `/api/documents/preview?fileId=${encodeURIComponent(document.fileId)}` : ""; const documentUrl = previewUrl || document.url; const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(document.name); return <div className="document-preview-card" key={`${document.fileId || document.url || document.name}-${index}`}><p className="document-preview-title">Dokumentasi {index + 1}</p>{isImage && documentUrl ? <a className="document-preview" href={documentUrl} target="_blank" rel="noreferrer"><img src={documentUrl} alt={`Dokumentasi ${index + 1} - ${hotspot.name}`} /></a> : documentUrl ? <a className="document-file-link" href={documentUrl} target="_blank" rel="noreferrer">Buka dokumen</a> : <p className="document-file-unavailable">Pratinjau tidak tersedia</p>}</div>; })}</div> : <DetailItem label="Dokumentasi" value="Tidak ada dokumen" />}</div><div className="detail-section qc-result-section"><p className="form-section-title">Hasil pemeriksaan kualitas</p><div className="detail-grid">{qcValues.map(([label, value]) => <DetailItem key={label} label={label} value={displayReviewValue(label, value)} />)}</div><DetailItem label="Catatan pemeriksaan" value={hotspot.qcNote} wide /></div>{canReview && <div className="user-modal-actions"><button type="button" className="button button-primary" onClick={onReview}>Periksa kualitas data</button></div>}</section></div>;
+  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">x</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={displayPopulation(hotspot.population)} /><DetailItem label="Tipe lokasi" value={[displayLocation(hotspot.locationType, locationTypeLabels), displayLocation(hotspot.locationSubtype, locationSubtypeLabels)].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /><DetailItem label="Tes HIV / HIV+" value={`${hotspot.hivTests || 0} / ${hotspot.hivPositive || 0}`} /></div><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={displayLocation(hotspot.informationSource, informationSourceLabels)} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen pendukung</p>{documents.length ? <div className="document-preview-grid">{documents.map((document, index) => { const previewUrl = document.fileId ? `/api/documents/preview?fileId=${encodeURIComponent(document.fileId)}` : ""; const documentUrl = previewUrl || document.url; const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(document.name); return <div className="document-preview-card" key={`${document.fileId || document.url || document.name}-${index}`}><p className="document-preview-title">Dokumentasi {index + 1}</p>{isImage && documentUrl ? <a className="document-preview" href={documentUrl} target="_blank" rel="noreferrer"><Image src={documentUrl} alt={`Dokumentasi ${index + 1} - ${hotspot.name}`} width={800} height={600} unoptimized /></a> : documentUrl ? <a className="document-file-link" href={documentUrl} target="_blank" rel="noreferrer">Buka dokumen</a> : <p className="document-file-unavailable">Pratinjau tidak tersedia</p>}</div>; })}</div> : <DetailItem label="Dokumentasi" value="Tidak ada dokumen" />}</div><div className="detail-section"><p className="form-section-title">Riwayat tahapan dan pemeriksaan</p><WorkflowTimeline hotspot={hotspot} /></div><div className="detail-section qc-result-section"><p className="form-section-title">Hasil pemeriksaan kualitas</p><div className="detail-grid">{qcValues.map(([label, value]) => <DetailItem key={label} label={label} value={displayReviewValue(label, value)} />)}</div><DetailItem label="Catatan pemeriksaan" value={hotspot.qcNote} wide /></div>{canReview && <div className="user-modal-actions"><button type="button" className="button button-primary" onClick={onReview}>Periksa kualitas data</button></div>}</section></div>;
 }
 
 export function ReviewQcModal({ hotspot, onClose, onSave, onAiReview, reviewerName }: { hotspot: ReviewHotspot; onClose: () => void; onSave: (payload: QcPayload) => Promise<void>; onAiReview: (submissionId: string) => Promise<AiQcSuggestion>; reviewerName: string }) {

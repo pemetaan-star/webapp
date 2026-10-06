@@ -1,83 +1,44 @@
 "use client";
 
 import { PanelHeading } from "@/app/components/dashboard";
+import { workflowStages, type DashboardSummary, type WorkflowStage } from "@/lib/dashboard-summary";
 
-type EnumeratorProgressRow = {
-  id: string;
-  enumeratorUid?: string;
-  enumeratorName?: string;
-  enumeratorUsername?: string;
-  qc: "Valid" | "Pending" | "Perlu perbaikan";
+const stageLabels: Record<WorkflowStage, string> = {
+  submitted: "Terkirim",
+  supervisor_review: "Supervisi",
+  coordinator_review: "Koordinator",
+  analyst_review: "Data Analis",
+  finalized: "Final",
+  needs_revision: "Perlu perbaikan",
 };
-
-type EnumeratorSummary = {
-  id: string;
-  name: string;
-  username: string;
-  total: number;
-  valid: number;
-  pending: number;
-  needsRevision: number;
-};
-
-function summarizeEnumerators(rows: EnumeratorProgressRow[]) {
-  const summaries = new Map<string, EnumeratorSummary>();
-
-  rows.forEach((row) => {
-    const name = row.enumeratorName?.trim() || "Nama belum diatur";
-    const username = row.enumeratorUsername?.trim() || "";
-    const id = row.enumeratorUid || username || name.toLowerCase();
-    const summary = summaries.get(id) || {
-      id,
-      name,
-      username,
-      total: 0,
-      valid: 0,
-      pending: 0,
-      needsRevision: 0,
-    };
-
-    summary.total += 1;
-    if (row.qc === "Valid") summary.valid += 1;
-    else if (row.qc === "Perlu perbaikan") summary.needsRevision += 1;
-    else summary.pending += 1;
-    summaries.set(id, summary);
-  });
-
-  return [...summaries.values()].sort((first, second) =>
-    second.total - first.total || first.name.localeCompare(second.name, "id"),
-  );
-}
 
 export function EnumeratorProgress({
-  rows,
+  summary,
   loading,
-  canLoadMore,
-  loadingMore,
-  onLoadMore,
+  error,
+  onRefresh,
 }: {
-  rows: EnumeratorProgressRow[];
+  summary: DashboardSummary | null;
   loading: boolean;
-  canLoadMore: boolean;
-  loadingMore: boolean;
-  onLoadMore: () => void;
+  error: string;
+  onRefresh: () => void;
 }) {
-  const enumerators = summarizeEnumerators(rows);
-
   return (
     <section className="panel enumerator-progress" aria-label="Progres enumerator">
       <PanelHeading
         icon="↗"
         title="Progres Enumerator"
-        subtitle="Jumlah data yang masuk dan status pemeriksaan kualitas per enumerator."
+        subtitle="Rekap seluruh data yang masuk, hasil QC, dan tahapan workflow. Tidak menggunakan target per enumerator."
       />
-      {loading && rows.length === 0 ? (
-        <p className="enumerator-progress-empty">Memuat progres enumerator...</p>
-      ) : enumerators.length ? (
+      {error ? (
+        <p className="enumerator-progress-empty" role="alert">{error}</p>
+      ) : loading && !summary ? (
+        <p className="enumerator-progress-empty" role="status">Memuat progres seluruh data...</p>
+      ) : summary?.enumerators.length ? (
         <div className="enumerator-progress-list">
-          {enumerators.map((enumerator) => {
-            const reviewed = enumerator.valid + enumerator.needsRevision;
-            const percentage = Math.round((reviewed / enumerator.total) * 100);
+          {summary.enumerators.map((enumerator) => {
+            const checked = enumerator.qc.valid + enumerator.qc.needsRevision;
+            const checkedPercent = enumerator.total ? Math.round((checked / enumerator.total) * 100) : 0;
 
             return (
               <article className="enumerator-progress-row" key={enumerator.id}>
@@ -91,24 +52,32 @@ export function EnumeratorProgress({
                 </div>
                 <div className="enumerator-progress-review">
                   <div className="enumerator-progress-review-label">
-                    <span>Sudah diperiksa</span>
-                    <strong>{percentage}%</strong>
+                    <span>Sudah diperiksa QC</span>
+                    <strong>{checked} dari {enumerator.total} · {checkedPercent}%</strong>
                   </div>
                   <div
                     className="enumerator-progress-track"
                     role="progressbar"
-                    aria-label={`Data ${enumerator.name} yang sudah diperiksa`}
+                    aria-label={`Data ${enumerator.name} yang sudah diperiksa QC`}
                     aria-valuemin={0}
                     aria-valuemax={enumerator.total}
-                    aria-valuenow={reviewed}
+                    aria-valuenow={checked}
                   >
-                    <span style={{ width: `${percentage}%` }} />
+                    <span style={{ width: `${checkedPercent}%` }} />
                   </div>
                   <div className="enumerator-progress-statuses">
-                    <span className="enumerator-progress-valid">Valid {enumerator.valid}</span>
-                    <span className="enumerator-progress-pending">Menunggu {enumerator.pending}</span>
-                    <span className="enumerator-progress-revision">Perlu perbaikan {enumerator.needsRevision}</span>
+                    <span className="enumerator-progress-valid">Valid {enumerator.qc.valid}</span>
+                    <span className="enumerator-progress-pending">Menunggu {enumerator.qc.pending}</span>
+                    <span className="enumerator-progress-revision">Perlu perbaikan {enumerator.qc.needsRevision}</span>
                   </div>
+                  <details className="enumerator-progress-stage-details">
+                    <summary>Rincian tahapan workflow</summary>
+                    <div className="enumerator-progress-stages" aria-label={`Tahapan workflow ${enumerator.name}`}>
+                      {workflowStages.map((stage) => (
+                        <span key={stage}>{stageLabels[stage]} <strong>{enumerator.stages[stage]}</strong></span>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               </article>
             );
@@ -117,11 +86,12 @@ export function EnumeratorProgress({
       ) : (
         <p className="enumerator-progress-empty">Belum ada data enumerator untuk ditampilkan.</p>
       )}
-      {canLoadMore && (
+      {summary && (
         <div className="enumerator-progress-footer">
-          <span>Ringkasan berdasarkan {rows.length} data yang dimuat.</span>
-          <button type="button" className="button button-secondary" onClick={onLoadMore} disabled={loadingMore}>
-            {loadingMore ? "Memuat..." : "Muat data berikutnya"}
+          <span>Rekap seluruh {summary.total} data.</span>
+          {loading && <span role="status">Memperbarui...</span>}
+          <button type="button" className="button button-secondary" onClick={onRefresh} disabled={loading}>
+            {loading ? "Memperbarui..." : "Perbarui ringkasan"}
           </button>
         </div>
       )}

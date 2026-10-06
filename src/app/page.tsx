@@ -11,6 +11,7 @@ import { DashboardOverview } from "@/app/components/dashboard-overview";
 import { DashboardAnalytics } from "@/app/components/dashboard-analytics";
 import { EnumeratorProgress } from "@/app/components/enumerator-progress";
 import { displayPopulation, ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
+import type { DashboardSummary, WorkflowStage } from "@/lib/dashboard-summary";
 
 type Hotspot = {
   id: string;
@@ -21,7 +22,8 @@ type Hotspot = {
   status: "Aktif" | "Baru" | "Tidak aktif" | "Perlu verifikasi";
   qc: "Valid" | "Pending" | "Perlu perbaikan";
   workflowStage: "submitted" | "supervisor_review" | "coordinator_review" | "analyst_review" | "finalized" | "needs_revision";
-  workflowHistory?: Array<{ stage: Hotspot["workflowStage"]; role: string; uid: string; at: string; note?: string }>;
+  workflowHistory?: Array<{ stage: WorkflowStage; role: string; uid: string; actorName?: string; at: string; note?: string }>;
+  createdAt: string;
   hotspotCode?: string;
   verificationStatus?: string;
   coordinates?: string;
@@ -135,7 +137,6 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
     const status = String(data.statusHotspot || "").toLowerCase();
     const qc = String(data.qcStatus || "pending").toLowerCase();
     const workflowStage = String(data.workflowStage || "submitted") as Hotspot["workflowStage"];
-    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(String(data.createdAt || ""));
     const documents = (Array.isArray(data.documents) ? data.documents : data.document ? [data.document] : [])
       .filter((document): document is Record<string, unknown> => typeof document === "object" && document !== null)
       .map((document) => ({
@@ -145,22 +146,39 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       }))
       .filter((document) => document.name || document.fileId || document.url);
     const primaryDocument = documents[0];
+    const createdAtValue = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(String(data.createdAt || ""));
+    const workflowHistory = Array.isArray(data.workflowHistory)
+      ? data.workflowHistory
+        .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+        .map((entry) => {
+          const stage = String(entry.stage || "submitted") as WorkflowStage;
+          return {
+            stage: (["submitted", "supervisor_review", "coordinator_review", "analyst_review", "finalized", "needs_revision"] as const).includes(stage) ? stage : "submitted",
+            role: String(entry.role || ""),
+            uid: String(entry.uid || ""),
+            actorName: String(entry.actorName || ""),
+            at: String(entry.at || ""),
+            note: String(entry.note || ""),
+          };
+        })
+      : [];
     return {
       id: item.id,
-      date: Number.isNaN(createdAt.getTime()) ? "-" : createdAt.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
+      date: Number.isNaN(createdAtValue.getTime()) ? "-" : createdAtValue.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
       name: String(data.namaHotspot || "Tanpa nama"),
       area: `${String(data.kecamatan || "-")} / ${String(data.kelurahan || "-")}`,
       population: Array.isArray(data.populasiKunci) ? data.populasiKunci.join(", ") : String(data.populasiKunci || "-"),
       status: status === "baru" ? "Baru" : status === "tidak_aktif" ? "Tidak aktif" : status === "perlu_verifikasi" || status === "perlu_klarifikasi" ? "Perlu verifikasi" : "Aktif",
       qc: qc === "valid" ? "Valid" : qc === "perlu_perbaikan" ? "Perlu perbaikan" : "Pending",
       workflowStage: workflowStageLabels[workflowStage] ? workflowStage : "submitted",
-      workflowHistory: Array.isArray(data.workflowHistory) ? data.workflowHistory : [],
       hotspotCode: String(data.kodeHotspot || ""),
       verificationStatus: String(data.statusVerifikasi || ""),
       coordinates: String(data.koordinat || ""),
       enumeratorName,
       enumeratorUsername: String(data.enumeratorUsername || ""),
       enumeratorUid,
+      createdAt: Number.isNaN(createdAtValue.getTime()) ? "" : createdAtValue.toISOString(),
+      workflowHistory,
       organisasi: String(data.organisasi || ""),
       address: String(data.alamat || ""),
       locationType: String(data.tipeLokasi || ""),
@@ -201,6 +219,9 @@ export default function Home() {
   const [hotspotRows, setHotspotRows] = useState<Hotspot[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState("");
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(true);
+  const [dashboardSummaryError, setDashboardSummaryError] = useState("");
   const [submissionCursor, setSubmissionCursor] = useState<SubmissionCursor>(null);
   const [loadingMoreSubmissions, setLoadingMoreSubmissions] = useState(false);
   const [showUserManagement, setShowUserManagement] = useState(false);
@@ -211,7 +232,7 @@ export default function Home() {
   const [creatingUser, setCreatingUser] = useState(false);
   const [showEnumeratorForm, setShowEnumeratorForm] = useState(false);
   const [showSupervisionForm, setShowSupervisionForm] = useState(false);
-  const [activeDashboardTab, setActiveDashboardTab] = useState<"data" | "analytics">("data");
+  const [activeDashboardTab, setActiveDashboardTab] = useState<"data" | "progress" | "analytics">("data");
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
   const [showQcModal, setShowQcModal] = useState(false);
   const [deletingHotspotId, setDeletingHotspotId] = useState<string | null>(null);
@@ -221,11 +242,11 @@ export default function Home() {
     const matchesQuery = Object.values(hotspot).join(" ").toLowerCase().includes(searchQuery.toLowerCase());
     return matchesQuery && (filter === "Semua" || hotspot.qc === filter);
   }), [filter, hotspotRows, searchQuery]);
-  const totalHotspots = hotspotRows.length;
-  const activeHotspots = hotspotRows.filter((item) => item.status === "Aktif" || item.status === "Baru").length;
-  const pendingQc = hotspotRows.filter((item) => item.qc !== "Valid").length;
-  const hivPositive = 0;
-  const hivTests = 0;
+  const totalHotspots = dashboardSummary?.total;
+  const activeHotspots = dashboardSummary?.active;
+  const pendingQc = dashboardSummary?.pendingQc;
+  const hivPositive = dashboardSummary?.hivPositive;
+  const hivTests = dashboardSummary?.hivTests;
   const roleKey = normalizeRole(userProfile?.role);
   const isEnumerator = roleKey === "enumerator";
   const isSupervisor = roleKey.includes("supervisor") || roleKey.includes("supervisi");
@@ -236,6 +257,33 @@ export default function Home() {
   const roleTitle = isEnumerator ? "Ruang Kerja Enumerator" : isReviewer ? "Dashboard Koordinator & Data Analis" : roleKey.includes("super") ? "Dashboard Supervisor" : "Dashboard Pendataan Hotspot";
   const roleSubtitle = isEnumerator ? "Kelola pendataan dan pantau hasil pemeriksaan hotspot yang Anda kirim." : "Pantau hasil survei lapangan dan proses pemeriksaan kualitas data.";
 
+  const refreshDashboardSummary = useCallback(async (requestUser: User | null, requestProfile: UserProfile | null) => {
+    if (!requestUser || !requestProfile) return;
+    let token: string;
+    try {
+      token = await requestUser.getIdToken();
+    } catch {
+      setDashboardSummaryError("Sesi login tidak dapat diperbarui. Silakan login kembali.");
+      setDashboardSummaryLoading(false);
+      return;
+    }
+    setDashboardSummaryLoading(true);
+    setDashboardSummaryError("");
+    try {
+      const response = await fetch("/api/dashboard/summary", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const result = await response.json() as DashboardSummary & { error?: string };
+      if (!response.ok) throw new Error(result.error || "Ringkasan dashboard gagal dimuat.");
+      setDashboardSummary(result);
+    } catch (error) {
+      setDashboardSummaryError(error instanceof Error ? error.message : "Ringkasan dashboard gagal dimuat.");
+    } finally {
+      setDashboardSummaryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!auth) {
       return;
@@ -243,11 +291,14 @@ export default function Home() {
     return onAuthStateChanged(auth, async (user) => {
       setAuthUser(user);
       setIsLoggedIn(Boolean(user));
+      setDashboardSummary(null);
+      setDashboardSummaryError("");
       if (user && db) {
         const profileSnapshot = await getDoc(doc(db, "user", user.uid));
         if (profileSnapshot.exists()) {
           const ownProfile = normalizeUserProfile(profileSnapshot.id, profileSnapshot.data());
           setUserProfile(ownProfile);
+          void refreshDashboardSummary(user, ownProfile);
           if (!normalizeOrganization(ownProfile.organisasi) && user.email) {
             try {
               const profileQuery = query(collection(db, "user"), where("email", "==", user.email), limit(10));
@@ -269,6 +320,7 @@ export default function Home() {
           setUserProfile(profile ? normalizeUserProfile(profile.id, profile.data()) : null);
           if (profile && profile.id !== user.uid) {
             setDataError("Profil akun belum tersambung dengan benar. Hubungi administrator untuk bantuan.");
+            setDashboardSummaryError("Profil akun belum tersambung dengan benar. Hubungi administrator untuk bantuan.");
           }
         } else {
           setUserProfile(null);
@@ -277,11 +329,12 @@ export default function Home() {
         }
       } else {
         setUserProfile(null);
+        setDashboardSummaryLoading(false);
         setDataLoading(false);
       }
       setAuthReady(true);
     });
-  }, []);
+  }, [refreshDashboardSummary]);
 
   useEffect(() => {
     if (!db || !authUser || !userProfile) return;
@@ -291,7 +344,7 @@ export default function Home() {
       try {
         const rows = await mapSubmissionSnapshot(snapshot, firestore);
         setHotspotRows(rows);
-        setSubmissionCursor(!isEnumerator && snapshot.docs.length === SUBMISSIONS_PAGE_SIZE ? snapshot.docs.at(-1) || null : null);
+        setSubmissionCursor(snapshot.docs.length === SUBMISSIONS_PAGE_SIZE ? snapshot.docs.at(-1) || null : null);
       } catch {
         setDataError("Data tidak dapat ditampilkan pada dashboard saat ini.");
       } finally {
@@ -355,6 +408,7 @@ export default function Home() {
         setShowQcModal(false);
       }
       setLastUpdated("sekarang");
+      void refreshDashboardSummary(authUser, userProfile);
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Data hotspot dan dokumen gagal dihapus.");
     } finally {
@@ -392,6 +446,7 @@ export default function Home() {
       : payload.status === "Valid"
         ? (isAnalyst || roleKey === "admin" ? "finalized" : "analyst_review")
         : (isCoordinator ? "coordinator_review" : "analyst_review");
+    const reviewedAt = new Date().toISOString();
     try {
       await updateDoc(doc(db, "submissions", selectedHotspot.id), {
         qcStatus: payload.status === "Valid" ? "valid" : payload.status === "Perlu perbaikan" ? "perlu_perbaikan" : "pending",
@@ -403,16 +458,25 @@ export default function Home() {
         qcTanggalPemeriksaan: payload.tanggal,
         ...(approvalDocument ? { qcDokumenPersetujuan: approvalDocument } : {}),
         qcReviewerUid: authUser?.uid || "",
-        qcReviewedAt: new Date().toISOString(),
+        qcReviewedAt: reviewedAt,
         workflowStage,
         workflowUpdatedByRole: userProfile?.role || "",
-        workflowHistory: arrayUnion({ stage: workflowStage, role: userProfile?.role || "", uid: authUser?.uid || "", at: new Date().toISOString(), note: payload.note }),
+        workflowHistory: arrayUnion({
+          stage: workflowStage,
+          role: userProfile?.role || "",
+          uid: authUser?.uid || "",
+          actorName: userProfile?.nama || userProfile?.name || authUser?.displayName || "",
+          at: reviewedAt,
+          note: payload.note,
+        }),
       });
     } catch (error) {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
       throw new Error(code === "permission-denied" ? "Anda tidak memiliki akses untuk menyimpan hasil pemeriksaan ini." : "Hasil pemeriksaan gagal disimpan. Silakan coba lagi.");
     }
     setHotspotRows((rows) => rows.map((row) => row.id === selectedHotspot.id ? { ...row, qc: payload.status } : row));
+    void refreshDashboardSummary(authUser, userProfile);
+    setLastUpdated("sekarang");
     setShowQcModal(false);
     setSelectedHotspot(null);
   }
@@ -519,17 +583,41 @@ export default function Home() {
       <nav className="topbar"><div className="brand"><span className="brand-mark">+</span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{displayRole(userProfile?.role)}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
       <main className="dashboard-content">
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Pemantauan & Pemeriksaan Kualitas"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Pembaruan data <strong>{lastUpdated}</strong></div></section>
-        {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Menunggu pemeriksaan</strong><p>Pantau status data yang sudah Anda kirim.</p></div><strong className="role-action-count">{pendingQc}</strong></article></section>}
-        <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={String(totalHotspots)} note={dataError || (dataLoading ? "Memuat data terbaru..." : "Data terkini")} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={String(hivPositive)} suffix={`/ ${hivTests} Tes`} note="Dari data terkini" icon="♥" /></section>
-        {!isEnumerator && <EnumeratorProgress rows={hotspotRows} loading={dataLoading} canLoadMore={submissionCursor !== null} loadingMore={loadingMoreSubmissions} onLoadMore={() => void loadMoreSubmissions()} />}
-        {!isEnumerator && <nav className="dashboard-tabs" role="tablist" aria-label="Tampilan dashboard"><button type="button" role="tab" id="dashboard-data-tab" aria-selected={activeDashboardTab === "data"} aria-controls="dashboard-data-panel" className={activeDashboardTab === "data" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("data")}>Data &amp; pemeriksaan</button><button type="button" role="tab" id="dashboard-analytics-tab" aria-selected={activeDashboardTab === "analytics"} aria-controls="dashboard-analytics-panel" className={activeDashboardTab === "analytics" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("analytics")}>Analitik</button></nav>}
-        {(!isEnumerator && activeDashboardTab === "analytics") ? <div id="dashboard-analytics-panel" role="tabpanel" aria-labelledby="dashboard-analytics-tab"><DashboardAnalytics rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} /></div> : <div id={!isEnumerator ? "dashboard-data-panel" : undefined} role={!isEnumerator ? "tabpanel" : undefined} aria-labelledby={!isEnumerator ? "dashboard-data-tab" : undefined}>
-          <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Pemeriksaan Kualitas"} subtitle={isEnumerator ? "Pantau hasil pemeriksaan dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau memeriksa kualitas data."} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status pemeriksaan"><option>Semua</option><option>Valid</option><option value="Pending">Menunggu</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>HASIL PEMERIKSAAN</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{displayQcStatus(hotspot.qc)}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button>{roleKey === "admin" && <button type="button" className="row-action row-action-danger" onClick={() => void removeHotspotData(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}</td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data terbaru..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data</div></section>
-          <DashboardOverview rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
-        </div>}
+        {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Menunggu pemeriksaan</strong><p>Pantau status data yang sudah Anda kirim.</p></div>        <strong className="role-action-count">{pendingQc ?? "—"}</strong></article></section>}
+        <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={totalHotspots === undefined ? "—" : String(totalHotspots)} note={dashboardSummaryLoading ? "Memuat seluruh data..." : dashboardSummaryError || "Total seluruh data"} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={activeHotspots === undefined ? "—" : String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={pendingQc === undefined ? "—" : String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={hivPositive === undefined ? "—" : String(hivPositive)} suffix={hivTests === undefined ? "" : `/ ${hivTests} Tes`} note="Akumulasi seluruh data" icon="♥" /></section>
+        {dataError && <p className="dashboard-summary-error" role="alert">{dataError}</p>}
+        {dashboardSummaryError && <p className="dashboard-summary-error" role="alert">{dashboardSummaryError} <button type="button" onClick={() => void refreshDashboardSummary(authUser, userProfile)}>Coba lagi</button></p>}
+        {!isEnumerator && <nav className="dashboard-tabs" role="tablist" aria-label="Tampilan dashboard"><button type="button" role="tab" id="dashboard-data-tab" aria-selected={activeDashboardTab === "data"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "data" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("data")}>Data &amp; pemeriksaan</button><button type="button" role="tab" id="dashboard-progress-tab" aria-selected={activeDashboardTab === "progress"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "progress" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => { setActiveDashboardTab("progress"); void refreshDashboardSummary(authUser, userProfile); }}>Progres Enumerator</button><button type="button" role="tab" id="dashboard-analytics-tab" aria-selected={activeDashboardTab === "analytics"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "analytics" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("analytics")}>Analitik</button></nav>}
+        {!isEnumerator && activeDashboardTab !== "data"
+          ? <div id="dashboard-active-panel" role="tabpanel" tabIndex={0} aria-labelledby={`dashboard-${activeDashboardTab}-tab`}>
+            {activeDashboardTab === "progress"
+              ? <EnumeratorProgress summary={dashboardSummary} loading={dashboardSummaryLoading} error={dashboardSummaryError} onRefresh={() => void refreshDashboardSummary(authUser, userProfile)} />
+              : <DashboardAnalytics rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />}
+          </div>
+          : <div id={!isEnumerator ? "dashboard-active-panel" : undefined} role={!isEnumerator ? "tabpanel" : undefined} tabIndex={!isEnumerator ? 0 : undefined} aria-labelledby={!isEnumerator ? "dashboard-data-tab" : undefined}>
+          <SubmissionTable
+            rows={filteredHotspots}
+            loadedRows={hotspotRows.length}
+            totalRows={totalHotspots}
+            isEnumerator={isEnumerator}
+            isAdmin={roleKey === "admin"}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            filter={filter}
+            onFilterChange={setFilter}
+            loading={dataLoading}
+            canLoadMore={submissionCursor !== null}
+            loadingMore={loadingMoreSubmissions}
+            onLoadMore={() => void loadMoreSubmissions()}
+            deletingHotspotId={deletingHotspotId}
+            onView={(hotspot) => { setSelectedHotspot(hotspot); setShowQcModal(false); }}
+            onDelete={(hotspot) => void removeHotspotData(hotspot)}
+          />
+          <DashboardOverview rows={hotspotRows} totalRows={totalHotspots ?? hotspotRows.length} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
+              </div>}
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}
-      {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} existingHotspots={hotspotRows} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); }} />}
+      {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} existingHotspots={hotspotRows} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); void refreshDashboardSummary(authUser, userProfile); }} />}
       {canSupervise && authUser && <SupervisorForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={() => { setShowSupervisionForm(false); setLastUpdated("sekarang"); }} />}
       {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={isReviewer} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
       {selectedHotspot && showQcModal && <ReviewQcModal key={`${selectedHotspot.id}-${authUser?.uid || ""}`} hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} onAiReview={reviewQcWithAi} reviewerName={userProfile?.nama || userProfile?.name || authUser?.displayName || authUser?.email?.split("@")[0] || ""} />}
@@ -542,20 +630,78 @@ function FormSubmissionLoading() { return <div className="dashboard-loading" rol
 
 
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-// Legacy modal retained for backwards-compatible references; active UI uses review-modals.tsx.
-function DetailModal({ hotspot, canReview, onClose, onReview }: { hotspot: Hotspot; canReview: boolean; onClose: () => void; onReview: () => void }) {
-  const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(hotspot.documentName || "");
-  const previewUrl = hotspot.documentFileId ? `/api/documents/preview?fileId=${encodeURIComponent(hotspot.documentFileId)}` : "";
-  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={hotspot.population} /><DetailItem label="Tipe lokasi" value={[hotspot.locationType, hotspot.locationSubtype].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /><DetailItem label="Tes HIV / HIV+" value={`${hotspot.hivTests || 0} / ${hotspot.hivPositive || 0}`} /></div><DetailItem label="Alamat atau deskripsi lokasi" value={hotspot.address} wide /><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={hotspot.informationSource} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen pendukung dan pemeriksaan</p>{isImage && previewUrl && <a className="document-preview" href={previewUrl} target="_blank" rel="noreferrer"><img src={previewUrl} alt={`Dokumentasi ${hotspot.name}`} /></a>}<div className="detail-grid"><DetailItem label="Dokumentasi" value={hotspot.documentName || "Tidak ada dokumen"} link={hotspot.documentUrl} /><DetailItem label="Status pemeriksaan" value={displayQcStatus(hotspot.qc)} /><DetailItem label="Pemeriksa" value={hotspot.qcInspector} /><DetailItem label="Tanggal pemeriksaan" value={hotspot.qcDate} /></div><DetailItem label="Catatan pemeriksaan" value={hotspot.qcNote} wide /></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Tutup</button>{canReview && <button type="button" className="button button-primary" onClick={onReview}>Buka pemeriksaan kualitas</button>}</div></section></div>;
-}
-
-function DetailItem({ label, value, link, wide }: { label: string; value?: string; link?: string; wide?: boolean }) {
-  const displayValue = value?.trim() || "-";
-  return <div className={`detail-item ${wide ? "detail-item-wide" : ""}`}><small>{label}</small>{link ? <a href={link} target="_blank" rel="noreferrer">{displayValue}</a> : <strong>{displayValue}</strong>}</div>;
-}
-
 // Legacy modal retained temporarily; active UI uses review-modals.tsx.
+function SubmissionTable({
+  rows,
+  loadedRows,
+  totalRows,
+  isEnumerator,
+  isAdmin,
+  searchQuery,
+  onSearchChange,
+  filter,
+  onFilterChange,
+  loading,
+  canLoadMore,
+  loadingMore,
+  onLoadMore,
+  deletingHotspotId,
+  onView,
+  onDelete,
+}: {
+  rows: Hotspot[];
+  loadedRows: number;
+  totalRows?: number;
+  isEnumerator: boolean;
+  isAdmin: boolean;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  filter: "Semua" | Hotspot["qc"];
+  onFilterChange: (value: "Semua" | Hotspot["qc"]) => void;
+  loading: boolean;
+  canLoadMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+  deletingHotspotId: string | null;
+  onView: (hotspot: Hotspot) => void;
+  onDelete: (hotspot: Hotspot) => void;
+}) {
+  const title = isEnumerator ? "Data Pendataan Saya" : "Data Survei & Pemeriksaan Kualitas";
+  const subtitle = isEnumerator
+    ? "Pantau hasil pemeriksaan dan catatan tindak lanjut data yang Anda kirim."
+    : "Pilih data untuk melihat detail atau memeriksa kualitas data.";
+
+  return <section className="panel table-panel">
+    <div className="table-toolbar">
+      <div><PanelHeading icon="≡" title={title} subtitle={subtitle} /></div>
+      <div className="table-controls">
+        <div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Cari nama / kelurahan..." /></div>
+        <select value={filter} onChange={(event) => onFilterChange(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status pemeriksaan">
+          <option>Semua</option><option>Valid</option><option value="Pending">Menunggu</option><option>Perlu perbaikan</option>
+        </select>
+      </div>
+    </div>
+    <div className="table-wrap"><table>
+      <thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>HASIL PEMERIKSAAN</th><th>AKSI</th></tr></thead>
+      <tbody>{rows.map((hotspot) => <tr key={hotspot.id}>
+        <td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td>
+        <td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td>
+        <td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{displayQcStatus(hotspot.qc)}</span></td>
+        <td><button className="row-action" onClick={() => onView(hotspot)} aria-label={`Lihat detail ${hotspot.name}`}>→</button>
+          {isAdmin && <button type="button" className="row-action row-action-danger" onClick={() => onDelete(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}
+        </td>
+      </tr>)}{rows.length === 0 && <tr><td colSpan={8} className="empty-state">{loading ? "Memuat data terbaru..." : "Data tidak ditemukan."}</td></tr>}</tbody>
+    </table></div>
+    <div className="table-footer">
+      <span>Menampilkan {rows.length} hasil dari {loadedRows} data yang dimuat{totalRows === undefined ? "" : ` · total keseluruhan ${totalRows}`}</span>
+      {canLoadMore
+        ? <button type="button" className="button-link" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Memuat..." : "Muat data berikutnya"}</button>
+        : <span>{totalRows !== undefined && loadedRows >= totalRows ? "Semua data termuat" : ""}</span>}
+    </div>
+  </section>;
+}
+
+/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
 function QcModal({ hotspot, onClose, onSave }: { hotspot: Hotspot; onClose: () => void; onSave: (payload: { status: Hotspot["qc"]; note: string; kelengkapan: string; duplikasi: string; kroscek: string; pemeriksa: string; tanggal: string; document?: File }) => Promise<void> }) {
   const [status, setStatus] = useState<Hotspot["qc"]>(hotspot.qc);
   const [kelengkapan, setKelengkapan] = useState("lengkap");
@@ -573,7 +719,6 @@ function QcModal({ hotspot, onClose, onSave }: { hotspot: Hotspot; onClose: () =
   }
   return <div className="user-modal-backdrop"><section className="user-modal qc-modal" role="dialog" aria-modal="true"><div className="user-modal-header"><div><p className="eyebrow">Pemeriksaan kualitas</p><h2>Pemeriksaan Data Hotspot</h2><p>{hotspot.name} · {hotspot.area}</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div><div className="qc-detail-grid"><div><small>ID Data</small><strong>{hotspot.id}</strong></div><div><small>Status hotspot</small><strong>{hotspot.status}</strong></div><div><small>Populasi kunci</small><strong>{hotspot.population}</strong></div><div><small>Koordinat</small><strong>{hotspot.coordinates || "-"}</strong></div></div><form onSubmit={submit} className="qc-form"><label>Pemeriksaan kelengkapan<select value={kelengkapan} onChange={(event) => setKelengkapan(event.target.value)}><option value="lengkap">Lengkap &amp; sesuai standar</option><option value="perlu_perbaikan">Perlu perbaikan / isian belum lengkap</option></select></label><label>Indikasi duplikasi<select value={duplikasi} onChange={(event) => setDuplikasi(event.target.value)}><option value="tidak_ada">Tidak ada indikasi duplikasi</option><option value="ada">Ada indikasi duplikasi</option></select></label><label>Kroscek antar enumerator<select value={kroscek} onChange={(event) => setKroscek(event.target.value)}><option value="sesuai">Sesuai hasil kroscek</option><option value="perlu_klarifikasi">Perlu klarifikasi ulang</option></select></label><label>Status akhir data<select value={status} onChange={(event) => setStatus(event.target.value as Hotspot["qc"])}><option value="Valid">Valid - Siap difinalkan</option><option value="Pending">Menunggu tindak lanjut</option><option value="Perlu perbaikan">Perlu perbaikan</option></select></label><label>Catatan pemeriksaan<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} /></label><label>Dokumen pendukung persetujuan<input type="file" accept="image/*,.pdf,.doc,.docx" onChange={(event) => setDocument(event.target.files?.[0])} /></label><div className="qc-form-grid"><label>Nama pemeriksa<input value={pemeriksa} onChange={(event) => setPemeriksa(event.target.value)} required /></label><label>Tanggal pemeriksaan<input type="date" value={tanggal} onChange={(event) => setTanggal(event.target.value)} required /></label></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan hasil pemeriksaan"}</button></div></form></section></div>;
 }
-/* eslint-enable @typescript-eslint/no-unused-vars */
 function UserManagementModal({ users, loading, error, editingUser, creatingUser, onClose, onAdd, onCancelEdit, onEdit, onSave, onCreate, onDelete }: { users: UserProfile[]; loading: boolean; error: string; editingUser: UserProfile | null; creatingUser: boolean; onClose: () => void; onAdd: () => void; onCancelEdit: () => void; onEdit: (user: UserProfile | null) => void; onSave: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; onCreate: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; onDelete: (user: UserProfile) => void }) {
   const [roleOverride, setRoleOverride] = useState<{ userId: string | null; role: string } | null>(null);
   const [savingUser, setSavingUser] = useState(false);

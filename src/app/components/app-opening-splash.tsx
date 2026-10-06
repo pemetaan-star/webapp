@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 const splashDuration = 4500;
 
@@ -21,7 +22,7 @@ export function AppOpeningSplash() {
       <div className="splash-card">
         <div className="splash-logo-wrap">
           <span className="splash-logo-glow" aria-hidden="true" />
-          <img src="/lingga-indonesia-icon.svg" alt="Lingga Indonesia" width="116" height="116" />
+          <Image src="/lingga-indonesia-icon.svg" alt="Lingga Indonesia" width={116} height={116} />
         </div>
         <p className="splash-eyebrow">LINGGA INDONESIA</p>
         <h1>Pemetaan Hotspot</h1>
