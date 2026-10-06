@@ -126,7 +126,7 @@ function formatStoredLabel(value: string) {
   return value.trim().replace(/_+/g, " ").replace(/\s+/g, " ");
 }
 
-function displayPopulation(value?: string) {
+export function displayPopulation(value?: string) {
   return value?.split(",").map((category) => {
     const trimmed = category.trim();
     return populationLabels[trimmed.toLowerCase()] || formatStoredLabel(trimmed);

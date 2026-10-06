@@ -9,7 +9,8 @@ import { Kpi, PanelHeading } from "@/app/components/dashboard";
 import { EnumeratorFormFields, normalizeOrganization, organizationOptions } from "@/app/components/enumerator-form";
 import { DashboardOverview } from "@/app/components/dashboard-overview";
 import { DashboardAnalytics } from "@/app/components/dashboard-analytics";
-import { ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
+import { EnumeratorProgress } from "@/app/components/enumerator-progress";
+import { displayPopulation, ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
 
 type Hotspot = {
   id: string;
@@ -26,6 +27,7 @@ type Hotspot = {
   coordinates?: string;
   enumeratorName?: string;
   enumeratorUsername?: string;
+  enumeratorUid?: string;
   organisasi?: string;
   address?: string;
   locationType?: string;
@@ -50,6 +52,7 @@ type Hotspot = {
 };
 
 type SubmissionCursor = QueryDocumentSnapshot<DocumentData> | null;
+const SUBMISSIONS_PAGE_SIZE = 25;
 
 type UserProfile = {
   id?: string;
@@ -283,12 +286,12 @@ export default function Home() {
   useEffect(() => {
     if (!db || !authUser || !userProfile) return;
     const firestore = db;
-    const submissionsQuery = (isEnumerator ? query(collection(firestore, "submissions"), where("enumeratorUid", "==", authUser.uid), limit(25)) : query(collection(firestore, "submissions"), orderBy("createdAt", "desc"), limit(25)));
+    const submissionsQuery = (isEnumerator ? query(collection(firestore, "submissions"), where("enumeratorUid", "==", authUser.uid), limit(SUBMISSIONS_PAGE_SIZE)) : query(collection(firestore, "submissions"), orderBy("createdAt", "desc"), limit(SUBMISSIONS_PAGE_SIZE)));
     const unsubscribe = onSnapshot(submissionsQuery, async (snapshot) => {
       try {
         const rows = await mapSubmissionSnapshot(snapshot, firestore);
         setHotspotRows(rows);
-        setSubmissionCursor(isEnumerator ? null : snapshot.docs.at(-1) || null);
+        setSubmissionCursor(!isEnumerator && snapshot.docs.length === SUBMISSIONS_PAGE_SIZE ? snapshot.docs.at(-1) || null : null);
       } catch {
         setDataError("Data tidak dapat ditampilkan pada dashboard saat ini.");
       } finally {
@@ -312,12 +315,12 @@ export default function Home() {
     try {
       const role = normalizeRole(userProfile.role);
       const nextQuery = role === "enumerator"
-        ? query(collection(db, "submissions"), where("enumeratorUid", "==", authUser.uid), startAfter(submissionCursor), limit(25))
-        : query(collection(db, "submissions"), orderBy("createdAt", "desc"), startAfter(submissionCursor), limit(25));
+        ? query(collection(db, "submissions"), where("enumeratorUid", "==", authUser.uid), startAfter(submissionCursor), limit(SUBMISSIONS_PAGE_SIZE))
+        : query(collection(db, "submissions"), orderBy("createdAt", "desc"), startAfter(submissionCursor), limit(SUBMISSIONS_PAGE_SIZE));
       const snapshot = await getDocs(nextQuery);
       const rows = await mapSubmissionSnapshot(snapshot, db);
       setHotspotRows((current) => [...current, ...rows]);
-      setSubmissionCursor(snapshot.docs.at(-1) || submissionCursor);
+      setSubmissionCursor(snapshot.docs.length === SUBMISSIONS_PAGE_SIZE ? snapshot.docs.at(-1) || null : null);
     } catch {
       setDataError("Halaman data berikutnya tidak dapat dimuat.");
     } finally {
@@ -518,9 +521,10 @@ export default function Home() {
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Pemantauan & Pemeriksaan Kualitas"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Pembaruan data <strong>{lastUpdated}</strong></div></section>
         {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Menunggu pemeriksaan</strong><p>Pantau status data yang sudah Anda kirim.</p></div><strong className="role-action-count">{pendingQc}</strong></article></section>}
         <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={String(totalHotspots)} note={dataError || (dataLoading ? "Memuat data terbaru..." : "Data terkini")} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={String(hivPositive)} suffix={`/ ${hivTests} Tes`} note="Dari data terkini" icon="♥" /></section>
+        {!isEnumerator && <EnumeratorProgress rows={hotspotRows} loading={dataLoading} canLoadMore={submissionCursor !== null} loadingMore={loadingMoreSubmissions} onLoadMore={() => void loadMoreSubmissions()} />}
         {!isEnumerator && <nav className="dashboard-tabs" role="tablist" aria-label="Tampilan dashboard"><button type="button" role="tab" id="dashboard-data-tab" aria-selected={activeDashboardTab === "data"} aria-controls="dashboard-data-panel" className={activeDashboardTab === "data" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("data")}>Data &amp; pemeriksaan</button><button type="button" role="tab" id="dashboard-analytics-tab" aria-selected={activeDashboardTab === "analytics"} aria-controls="dashboard-analytics-panel" className={activeDashboardTab === "analytics" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("analytics")}>Analitik</button></nav>}
         {(!isEnumerator && activeDashboardTab === "analytics") ? <div id="dashboard-analytics-panel" role="tabpanel" aria-labelledby="dashboard-analytics-tab"><DashboardAnalytics rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} /></div> : <div id={!isEnumerator ? "dashboard-data-panel" : undefined} role={!isEnumerator ? "tabpanel" : undefined} aria-labelledby={!isEnumerator ? "dashboard-data-tab" : undefined}>
-          <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Pemeriksaan Kualitas"} subtitle={isEnumerator ? "Pantau hasil pemeriksaan dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau memeriksa kualitas data."} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status pemeriksaan"><option>Semua</option><option>Valid</option><option value="Pending">Menunggu</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>HASIL PEMERIKSAAN</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{hotspot.population}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{displayQcStatus(hotspot.qc)}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button>{roleKey === "admin" && <button type="button" className="row-action row-action-danger" onClick={() => void removeHotspotData(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}</td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data terbaru..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data</div></section>
+          <section className="panel table-panel"><div className="table-toolbar"><div><PanelHeading icon="≡" title={isEnumerator ? "Data Pendataan Saya" : "Data Survei & Pemeriksaan Kualitas"} subtitle={isEnumerator ? "Pantau hasil pemeriksaan dan catatan tindak lanjut data yang Anda kirim." : "Pilih data untuk melihat detail atau memeriksa kualitas data."} /></div><div className="table-controls"><div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cari nama / kelurahan..." /></div><select value={filter} onChange={(event) => setFilter(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status pemeriksaan"><option>Semua</option><option>Valid</option><option value="Pending">Menunggu</option><option>Perlu perbaikan</option></select></div></div><div className="table-wrap"><table><thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>HASIL PEMERIKSAAN</th><th>AKSI</th></tr></thead><tbody>{filteredHotspots.map((hotspot) => <tr key={hotspot.id}><td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td><td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td><td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{displayQcStatus(hotspot.qc)}</span></td><td><button className="row-action" onClick={() => { setSelectedHotspot(hotspot); setShowQcModal(false); }} aria-label={`Lihat detail ${hotspot.name}`}>→</button>{roleKey === "admin" && <button type="button" className="row-action row-action-danger" onClick={() => void removeHotspotData(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}</td></tr>)}{filteredHotspots.length === 0 && <tr><td colSpan={8} className="empty-state">{dataLoading ? "Memuat data terbaru..." : "Data tidak ditemukan."}</td></tr>}</tbody></table></div><div className="table-footer">Menampilkan <strong>{filteredHotspots.length}</strong> dari {totalHotspots} data</div></section>
           <DashboardOverview rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
         </div>}
       </main>
