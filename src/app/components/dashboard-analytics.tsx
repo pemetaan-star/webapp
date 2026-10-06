@@ -31,10 +31,14 @@ const categoryLabels: Record<string, string> = {
   platform_virtual: "Platform virtual",
 };
 
+function formatCategory(value: string) {
+  return value.replace(/_+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function summarize(rows: AnalyticsRow[], getCategory: (row: AnalyticsRow) => string[]) {
   const counts = new Map<string, number>();
   rows.forEach((row) => getCategory(row).forEach((category) => {
-    const label = categoryLabels[category.toLowerCase()] || category.replaceAll("_", " ");
+    const label = categoryLabels[category.toLowerCase()] || formatCategory(category);
     if (label) counts.set(label, (counts.get(label) || 0) + 1);
   }));
   return [...counts.entries()].sort((first, second) => second[1] - first[1]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
@@ -330,15 +330,22 @@ export default function Home() {
   }
 
   async function removeHotspotData(hotspot: Hotspot) {
-    if (!db || roleKey !== "admin" || deletingHotspotRef.current) return;
-    const confirmed = window.confirm(`Hapus data hotspot "${hotspot.name}"? Dokumen lampiran tidak ikut terhapus.`);
+    if (!db || !authUser || roleKey !== "admin" || deletingHotspotRef.current) return;
+    const confirmed = window.confirm(`Hapus data hotspot "${hotspot.name}" beserta dokumen pendukungnya? File Drive akan dipindahkan ke Sampah.`);
     if (!confirmed) return;
 
     deletingHotspotRef.current = true;
     setDeletingHotspotId(hotspot.id);
     setDataError("");
     try {
-      await deleteDoc(doc(db, "submissions", hotspot.id));
+      const token = await authUser.getIdToken();
+      const response = await fetch("/api/admin/submissions/delete", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: hotspot.id }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Data hotspot dan dokumen gagal dihapus.");
       setHotspotRows((rows) => rows.filter((row) => row.id !== hotspot.id));
       if (selectedHotspot?.id === hotspot.id) {
         setSelectedHotspot(null);
@@ -346,8 +353,7 @@ export default function Home() {
       }
       setLastUpdated("sekarang");
     } catch (error) {
-      const code = error instanceof Error && "code" in error ? String(error.code) : "";
-      setDataError(code === "permission-denied" ? "Akses penghapusan ditolak." : "Data hotspot gagal dihapus.");
+      setDataError(error instanceof Error ? error.message : "Data hotspot dan dokumen gagal dihapus.");
     } finally {
       deletingHotspotRef.current = false;
       setDeletingHotspotId(null);
@@ -966,7 +972,14 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         const uploadResponse = await fetch("/api/documents/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileData, fileName: uploadFile.name, fileMime: uploadFile.type || "application/octet-stream", username: profile?.username || user.email, idempotencyKey: `${submissionIdempotencyKey.current}-${index + 1}` }),
+          body: JSON.stringify({
+            fileData,
+            fileName: uploadFile.name,
+            fileMime: uploadFile.type || "application/octet-stream",
+            enumeratorName: profile?.nama || user.email || "Tanpa Enumerator",
+            hotspotCode: activeHotspotCode,
+            idempotencyKey: `${submissionIdempotencyKey.current}-${index + 1}`,
+          }),
         });
         const responseText = await uploadResponse.text();
         let uploadResult: { success?: boolean; message?: string; fileName?: string; fileId?: string; fileUrl?: string };

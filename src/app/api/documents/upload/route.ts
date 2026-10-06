@@ -15,6 +15,9 @@ export async function POST(request: Request) {
     const fileName = typeof payload.fileName === "string" ? payload.fileName.trim() : "";
     const fileMime = typeof payload.fileMime === "string" ? payload.fileMime : "application/octet-stream";
     const idempotencyKey = typeof payload.idempotencyKey === "string" ? payload.idempotencyKey.trim() : "";
+    const folderName = typeof payload.folderName === "string" ? payload.folderName.trim() : "";
+    const enumeratorName = typeof payload.enumeratorName === "string" ? payload.enumeratorName.trim() : "";
+    const hotspotCode = typeof payload.hotspotCode === "string" ? payload.hotspotCode.trim() : "";
     const allowedMime = /^(image\/(jpeg|png|gif|webp)|application\/(pdf|msword)|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/i;
     if (fileData.length > 2_700_000) {
       return NextResponse.json({ message: "Foto terlalu besar. Pilih foto yang lebih kecil." }, { status: 413 });
@@ -22,10 +25,18 @@ export async function POST(request: Request) {
     if (!fileData || !fileName || !idempotencyKey || !allowedMime.test(fileMime)) {
       return NextResponse.json({ message: "Dokumen tidak valid atau melebihi batas ukuran." }, { status: 400 });
     }
+    if (folderName !== "Persetujuan QC" && (!enumeratorName || !hotspotCode)) {
+      return NextResponse.json({ message: "Nama enumerator dan kode hotspot wajib diisi." }, { status: 400 });
+    }
     const response = await fetch(gasUploadUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, secret: (process.env.GAS_UPLOAD_SECRET || "").trim().replace(/^['"]|['"]$/g, "") }),
+      body: JSON.stringify({
+        ...payload,
+        enumeratorName,
+        hotspotCode,
+        secret: (process.env.GAS_UPLOAD_SECRET || "").trim().replace(/^['"]|['"]$/g, ""),
+      }),
     });
     const result = await response.json();
     if (!response.ok || !result.success) {

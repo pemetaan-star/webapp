@@ -36,6 +36,9 @@ function doPost(e) {
     if (!expectedSecret || receivedSecret !== expectedSecret) {
       return jsonResponse({ success: false, message: 'Upload tidak diizinkan.' });
     }
+    if (payload.action === 'deleteFiles') {
+      return deleteDriveFiles(payload.fileIds);
+    }
     if (!folderId || !payload.fileData || !payload.fileName) {
       return jsonResponse({ success: false, message: 'Folder Drive atau data dokumen belum lengkap.' });
     }
@@ -65,8 +68,7 @@ function doPost(e) {
       }
 
       const parentFolder = DriveApp.getFolderById(folderId);
-      const requestedFolder = String(payload.folderName || 'Dokumen Enumerator').replace(/[^a-zA-Z0-9 _-]/g, '').trim();
-      const targetFolder = getOrCreateFolder(parentFolder, requestedFolder || 'Dokumen Enumerator');
+      const targetFolder = getUploadTargetFolder(parentFolder, payload);
       const safeName = String(payload.fileName).replace(/[\\/:*?"<>|]/g, '_');
       const file = targetFolder.createFile(
         Utilities.newBlob(
@@ -92,6 +94,81 @@ function doPost(e) {
       message: 'Upload ke Google Drive gagal: ' + error.toString()
     });
   }
+}
+
+function deleteDriveFiles(fileIds) {
+  const rootFolderId = PropertiesService.getScriptProperties().getProperty('FOLDER_UTAMA') || '';
+  if (!Array.isArray(fileIds) || fileIds.length > 20) {
+    return jsonResponse({ success: false, message: 'Daftar dokumen tidak valid.' });
+  }
+  if (!rootFolderId) {
+    return jsonResponse({ success: false, message: 'Folder utama belum dikonfigurasi.' });
+  }
+  const uniqueFileIds = Array.from(new Set(fileIds.map(function(fileId) {
+    return String(fileId || '').trim();
+  }).filter(Boolean)));
+  if (uniqueFileIds.some(function(fileId) {
+    return !/^[a-zA-Z0-9_-]{10,200}$/.test(fileId);
+  })) {
+    return jsonResponse({ success: false, message: 'ID dokumen tidak valid.' });
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    uniqueFileIds.forEach(function(fileId) {
+      const file = DriveApp.getFileById(fileId);
+      if (!isInDriveFolderTree(file, rootFolderId)) {
+        throw new Error('Dokumen berada di luar folder penyimpanan aplikasi.');
+      }
+      file.setTrashed(true);
+    });
+    return jsonResponse({ success: true, deletedFiles: uniqueFileIds.length });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function isInDriveFolderTree(file, rootFolderId) {
+  const folders = [];
+  const fileParents = file.getParents();
+  while (fileParents.hasNext()) folders.push(fileParents.next());
+  const visited = {};
+  while (folders.length) {
+    const folder = folders.pop();
+    const folderId = folder.getId();
+    if (folderId === rootFolderId) return true;
+    if (visited[folderId]) continue;
+    visited[folderId] = true;
+    const ancestors = folder.getParents();
+    while (ancestors.hasNext()) folders.push(ancestors.next());
+  }
+  return false;
+}
+
+function getUploadTargetFolder(parentFolder, payload) {
+  const requestedFolder = String(payload.folderName || '').trim();
+  if (requestedFolder === 'Persetujuan QC') {
+    return getOrCreateFolder(parentFolder, requestedFolder);
+  }
+
+  const enumeratorName = sanitizeFolderName(payload.enumeratorName);
+  const hotspotCode = sanitizeFolderName(payload.hotspotCode);
+  if (!enumeratorName || !hotspotCode) {
+    throw new Error('Nama enumerator dan kode hotspot wajib diisi.');
+  }
+
+  const enumeratorRootFolder = getOrCreateFolder(parentFolder, 'Enumerator');
+  const enumeratorFolder = getOrCreateFolder(enumeratorRootFolder, enumeratorName);
+  return getOrCreateFolder(enumeratorFolder, hotspotCode);
+}
+
+function sanitizeFolderName(value) {
+  return String(value || '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
 }
 
 function getOrCreateFolder(parentFolder, folderName) {
