@@ -39,6 +39,7 @@ type Hotspot = {
   informantPhone?: string;
   activityDescription?: string;
   mappingCondition?: string;
+  documents?: Array<{ name: string; fileId?: string; url?: string }>;
   documentName?: string;
   documentFileId?: string;
   documentUrl?: string;
@@ -131,6 +132,15 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
     const qc = String(data.qcStatus || "pending").toLowerCase();
     const workflowStage = String(data.workflowStage || "submitted") as Hotspot["workflowStage"];
     const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(String(data.createdAt || ""));
+    const documents = (Array.isArray(data.documents) ? data.documents : data.document ? [data.document] : [])
+      .filter((document): document is Record<string, unknown> => typeof document === "object" && document !== null)
+      .map((document) => ({
+        name: String(document.name || ""),
+        fileId: String(document.fileId || ""),
+        url: String(document.url || ""),
+      }))
+      .filter((document) => document.name || document.fileId || document.url);
+    const primaryDocument = documents[0];
     return {
       id: item.id,
       date: Number.isNaN(createdAt.getTime()) ? "-" : createdAt.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
@@ -161,9 +171,10 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       informantPhone: String(data.noHpInforman || ""),
       activityDescription: String(data.keteranganAktivitas || ""),
       mappingCondition: String(data.kondisiSaatPemetaan || ""),
-      documentName: String(data.document?.name || ""),
-      documentFileId: String(data.document?.fileId || ""),
-      documentUrl: String(data.document?.url || ""),
+      documents,
+      documentName: primaryDocument?.name || "",
+      documentFileId: primaryDocument?.fileId || "",
+      documentUrl: primaryDocument?.url || "",
       qcNote: String(data.qcNote || ""),
       qcKelengkapan: String(data.qcKelengkapan || ""),
       qcDuplikasi: String(data.qcDuplikasi || ""),
