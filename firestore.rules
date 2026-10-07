@@ -117,10 +117,35 @@ service cloud.firestore {
     match /supervisions/{supervisionId} {
       allow create: if (isCoordinator() || isAdmin())
         && request.resource.data.coordinatorUid == request.auth.uid
+        && request.resource.data.enumeratorUid is string
+        && request.resource.data.enumeratorUid.size() > 0
         && request.resource.data.workflowStage == 'coordinator_review'
-        && request.resource.data.checks.keys().size() == 12;
-      allow read: if isReviewer() || (signedIn() && resource.data.supervisorUid == request.auth.uid);
-      allow update, delete: if isAdmin();
+        && request.resource.data.workflowStatus == 'awaiting_enumerator_signature'
+        && request.resource.data.submissionIds is list
+        && request.resource.data.submissionIds.size() > 0
+        && request.resource.data.submissionIds.size() <= 499
+        && request.resource.data.checks.keys().size() == 12
+        && request.resource.data.pengesahanTandaTanganKoordinator.signerUid == request.auth.uid
+        && request.resource.data.pengesahanTandaTanganKoordinator.fileId is string;
+      allow read: if isReviewer() || (signedIn() && resource.data.enumeratorUid == request.auth.uid);
+      allow update: if isAdmin()
+        || (isEnumerator()
+          && resource.data.enumeratorUid == request.auth.uid
+          && resource.data.workflowStatus == 'awaiting_enumerator_signature'
+          && request.resource.data.workflowStatus == 'awaiting_coordinator_completion'
+          && request.resource.data.pengesahanEnumeratorHadir == true
+          && request.resource.data.pengesahanTandaTanganEnumerator.signerUid == request.auth.uid
+          && request.resource.data.pengesahanTandaTanganEnumerator.fileId is string
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pengesahanNamaEnumerator', 'pengesahanTanggalEnumerator', 'pengesahanEnumeratorHadir',
+            'pengesahanTandaTanganEnumerator', 'workflowStatus'
+          ]))
+        || (isCoordinator()
+          && resource.data.coordinatorUid == request.auth.uid
+          && resource.data.workflowStatus == 'awaiting_coordinator_completion'
+          && request.resource.data.workflowStatus == 'completed'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['workflowStatus', 'completedAt']));
+      allow delete: if isAdmin();
     }
   }
 }
