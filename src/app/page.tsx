@@ -1204,7 +1204,7 @@ function SupervisionSignatureCanvas({ label, signature, onChange }: {
   }
 
   return <div className="signature-field">
-    <div className="signature-field-heading"><strong>{label}</strong><button type="button" className="button button-ghost" onClick={clearSignature} disabled={!signature}>Hapus tanda tangan</button></div>
+    <div className="signature-field-heading"><strong>{label}</strong><button type="button" className="button button-secondary" onClick={clearSignature}>Hapus tanda tangan</button></div>
     <canvas
       ref={canvasRef}
       className="signature-canvas"
