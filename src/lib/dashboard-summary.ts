@@ -1,6 +1,8 @@
 export const workflowStages = [
   "submitted",
   "coordinator_review",
+  "awaiting_enumerator_signature",
+  "awaiting_coordinator_completion",
   "analyst_review",
   "finalized",
   "needs_revision",
@@ -18,7 +20,7 @@ export function canReviewWorkflowStage(
   role: "admin" | "coordinator" | "analyst" | "other",
   stage: WorkflowStage,
 ) {
-  if (role === "admin") return stage !== "finalized";
+  if (role === "admin") return stage !== "finalized" && stage !== "awaiting_enumerator_signature" && stage !== "awaiting_coordinator_completion";
   if (role === "coordinator") {
     return ["submitted", "coordinator_review", "needs_revision"].includes(stage);
   }

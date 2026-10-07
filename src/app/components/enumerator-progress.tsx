@@ -6,6 +6,8 @@ import { workflowStages, type DashboardSummary, type WorkflowStage } from "@/lib
 const stageLabels: Record<WorkflowStage, string> = {
   submitted: "Menunggu Koordinator",
   coordinator_review: "Supervisi Koordinator",
+  awaiting_enumerator_signature: "Menunggu tanda tangan Anda",
+  awaiting_coordinator_completion: "Menunggu Koordinator menyelesaikan",
   analyst_review: "Data Analis",
   finalized: "Database final",
   needs_revision: "Perlu perbaikan",

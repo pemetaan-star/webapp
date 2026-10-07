@@ -321,15 +321,32 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .signature-field { display: grid; gap: 7px; }
 .signature-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .supervision-sign-grid .signature-field-heading strong { color: var(--ink); font: 700 .72rem 'DM Sans', sans-serif; text-transform: none; }
-.signature-field-heading .button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: #f3f6f8; font-size: .67rem; white-space: nowrap; }
-.signature-field-heading .button:hover { border-color: var(--teal); color: var(--teal); background: #eaf7f5; }
+.signature-field-heading .signature-clear-button { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 6px 11px; border: 1px solid #cf5c48; border-radius: 7px; color: #a83e30; background: #fff1ef; font: 700 .72rem var(--font-dm-sans), sans-serif; white-space: nowrap; cursor: pointer; }
+.signature-field-heading .signature-clear-button:hover { border-color: #a83e30; color: white; background: #a83e30; }
+.signature-field-heading .signature-clear-button:focus-visible { outline: 3px solid #f3aa9e; outline-offset: 2px; }
 .signature-canvas { display: block; width: 100%; height: 145px; border: 1px dashed #9aaeb9; border-radius: 8px; background: #fff; cursor: crosshair; touch-action: none; }
 .signature-field > small { color: var(--muted); font-size: .66rem; line-height: 1.4; }
 .supervision-form .signature-attendance { display: flex; grid-template-columns: auto minmax(0, 1fr); align-items: flex-start; gap: 9px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; font-weight: 500; line-height: 1.45; }
 .supervision-form .signature-attendance input { flex: 0 0 auto; margin-top: 2px; accent-color: var(--teal); }
 .signature-inbox, .coordinator-supervision-queue { display: grid; gap: 12px; margin: 0 0 16px; }
-.signature-inbox-heading h2, .coordinator-supervision-queue h2 { margin: 0 0 4px; font: 700 1rem 'Space Grotesk'; }
-.signature-inbox-heading p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: .74rem; line-height: 1.5; }
+.signature-inbox .table-toolbar { margin-bottom: 12px; }
+.signature-inbox .signature-inbox-table { min-width: 760px; }
+.signature-inbox-table td:last-child { white-space: nowrap; }
+.signature-inbox-table .button { min-height: 32px; padding: 7px 10px; font-size: .68rem; }
+.signature-result-modal { width: min(780px, calc(100vw - 28px)); }
+.signature-result-content { display: grid; gap: 13px; }
+.signature-result-summary, .signature-result-note { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; }
+.signature-result-summary strong, .signature-result-note strong, .signature-result-coordinator-signature > strong { color: var(--ink); font-size: .76rem; }
+.signature-result-summary span, .signature-result-note p { margin: 0; color: var(--muted); font-size: .74rem; line-height: 1.5; }
+.signature-result-checks { display: grid; gap: 12px; }
+.signature-result-checks h3, .signature-session-form h3 { margin: 0; color: var(--ink); font: 700 .86rem 'Space Grotesk'; }
+.signature-result-checks > div { display: grid; gap: 6px; }
+.signature-result-checks > div > strong { color: var(--ink); font-size: .73rem; }
+.signature-result-checks ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.signature-result-checks li { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 7px 9px; border-radius: 6px; background: #f5f8fa; color: var(--muted); font-size: .7rem; line-height: 1.4; }
+.signature-result-checks li b { flex: 0 0 auto; color: var(--ink); }
+.signature-result-coordinator-signature { display: grid; gap: 7px; justify-items: start; }
+.signature-result-coordinator-signature img { width: min(300px, 100%); height: 85px; object-fit: contain; object-position: left center; border: 1px solid var(--line); border-radius: 7px; background: white; }
 .signature-session-card { display: grid; gap: 14px; padding: 16px; }
 .signature-session-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .signature-session-heading h3 { margin: 0 0 5px; color: var(--ink); font: 700 .9rem 'Space Grotesk'; }
@@ -355,8 +372,22 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .supervision-hotspot-select > label span { display: grid; gap: 3px; min-width: 0; }
 .supervision-hotspot-select > label small, .supervision-hotspot-select > small { color: var(--muted); font-size: .68rem; line-height: 1.45; }
 .supervision-hotspot-select > small { display: block; }
-@media (max-width: 600px) { .role-workflow-guide { align-items: start; gap: 10px; padding: 13px; }.role-workflow-count { min-width: 65px; font-size: 1.45rem; } }
+@media (max-width: 600px) { .role-workflow-guide { align-items: start; gap: 10px; padding: 13px; }.role-workflow-count { min-width: 65px; font-size: 1.45rem; }.signature-result-modal { max-height: calc(100dvh - 20px); padding: 14px; } }
 @media (max-width: 600px) {
+  .enumerator-dashboard .signature-inbox .signature-inbox-table { min-width: 0; table-layout: fixed; }
+  .enumerator-dashboard .signature-inbox .signature-inbox-table th,
+  .enumerator-dashboard .signature-inbox .signature-inbox-table td { padding: 10px 6px; }
+  .enumerator-dashboard .signature-inbox .signature-inbox-table th:nth-child(1),
+  .enumerator-dashboard .signature-inbox .signature-inbox-table td:nth-child(1),
+  .enumerator-dashboard .signature-inbox .signature-inbox-table th:nth-child(3),
+  .enumerator-dashboard .signature-inbox .signature-inbox-table td:nth-child(3) { display: none; }
+  .enumerator-dashboard .signature-inbox .signature-inbox-table th:nth-child(2),
+  .enumerator-dashboard .signature-inbox .signature-inbox-table td:nth-child(2) { display: table-cell; width: 42%; }
+  .enumerator-dashboard .signature-inbox .signature-inbox-table th:nth-child(4),
+  .enumerator-dashboard .signature-inbox .signature-inbox-table td:nth-child(4) { display: table-cell; width: 30%; }
+  .enumerator-dashboard .signature-inbox .signature-inbox-table th:nth-child(5),
+  .enumerator-dashboard .signature-inbox .signature-inbox-table td:nth-child(5) { display: table-cell; width: 28%; text-align: center; }
+  .enumerator-dashboard .signature-inbox-table .button { padding: 7px; font-size: .61rem; white-space: normal; }
   .dashboard-page .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 11px; }
   .dashboard-page .kpi-card { min-height: 104px; padding: 10px; border-radius: 11px; }
   .dashboard-page .kpi-card small { margin-top: 9px; font-size: .55rem; line-height: 1.25; }

@@ -83,6 +83,8 @@ export type AiQcSuggestion = {
 const workflowStageLabels: Record<string, string> = {
   submitted: "Menunggu supervisi Koordinator",
   coordinator_review: "Supervisi Koordinator",
+  awaiting_enumerator_signature: "Menunggu tanda tangan Enumerator",
+  awaiting_coordinator_completion: "Menunggu penyelesaian Koordinator",
   analyst_review: "Pemeriksaan data analis",
   finalized: "Database final",
   needs_revision: "Perlu perbaikan",

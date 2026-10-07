@@ -6,6 +6,8 @@ const PAGE_SIZE = 500;
 const emptyStages = (): Record<WorkflowStage, number> => ({
   submitted: 0,
   coordinator_review: 0,
+  awaiting_enumerator_signature: 0,
+  awaiting_coordinator_completion: 0,
   analyst_review: 0,
   finalized: 0,
   needs_revision: 0,
