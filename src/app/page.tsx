@@ -1344,36 +1344,22 @@ function EnumeratorSignatureCard({ session, user, profile, onClose, onSigned }: 
 
   async function sign(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!db || !signature || !attested) return;
+    if (!signature || !attested) return;
     setSaving(true);
     setError("");
     try {
       const signerName = profile?.nama || profile?.name || user.displayName || user.email || "";
       const storedSignature = await uploadSupervisionSignature(user, signerName, session.id, signature, "enumerator");
-      const signedAt = new Date().toISOString();
-      const batch = writeBatch(db);
-      batch.update(doc(db, "supervisions", session.id), {
-        pengesahanNamaEnumerator: signerName,
-        pengesahanTanggalEnumerator: signedDate,
-        pengesahanEnumeratorHadir: true,
-        pengesahanTandaTanganEnumerator: storedSignature,
-        workflowStatus: "awaiting_coordinator_completion",
+      const token = await user.getIdToken();
+      const response = await fetch("/api/supervisions/sign", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id, signerName, signedDate, signature: storedSignature }),
       });
-      for (const submissionId of session.submissionIds) {
-        batch.update(doc(db, "submissions", submissionId), {
-          workflowStage: "awaiting_coordinator_completion",
-          workflowUpdatedByRole: "enumerator",
-          workflowHistory: arrayUnion({
-            stage: "awaiting_coordinator_completion",
-            role: "enumerator",
-            uid: user.uid,
-            actorName: signerName,
-            at: signedAt,
-            note: "Enumerator telah menandatangani hasil supervisi.",
-          }),
-        });
+      const result = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(result?.error || "Tanda tangan gagal disimpan.");
       }
-      await batch.commit();
       setSubmitted(true);
       onSigned();
     } catch (signError) {
