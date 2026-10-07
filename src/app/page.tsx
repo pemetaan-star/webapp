@@ -26,6 +26,8 @@ type Hotspot = {
   workflowHistory?: Array<{ stage: WorkflowStage; role: string; uid: string; actorName?: string; at: string; note?: string }>;
   createdAt: string;
   hotspotCode?: string;
+  visitType?: "initial" | "follow_up";
+  visitNumber?: number;
   verificationStatus?: string;
   coordinates?: string;
   enumeratorName?: string;
@@ -63,6 +65,7 @@ type Hotspot = {
 
 type SubmissionCursor = QueryDocumentSnapshot<DocumentData> | null;
 const SUBMISSIONS_PAGE_SIZE = 25;
+type PreviousHotspot = Pick<Hotspot, "id" | "hotspotCode" | "name" | "area" | "address" | "visitNumber" | "date">;
 
 type UserProfile = {
   id?: string;
@@ -183,6 +186,8 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       coordinatorReviewerName: String(data.coordinatorReviewerName || ""),
       coordinatorReviewDate: String(data.coordinatorReviewDate || ""),
       hotspotCode: String(data.kodeHotspot || ""),
+      visitType: data.visitType === "follow_up" ? "follow_up" : "initial",
+      visitNumber: Number.isInteger(Number(data.visitNumber)) && Number(data.visitNumber) > 0 ? Number(data.visitNumber) : undefined,
       verificationStatus: String(data.statusVerifikasi || ""),
       coordinates: String(data.koordinat || ""),
       enumeratorName,
@@ -1606,6 +1611,8 @@ function SupervisionChecks({ title, name, items }: { title: string; name: string
 function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: { user: User; profile: UserProfile | null; existingHotspots: Hotspot[]; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [previousVisits, setPreviousVisits] = useState<PreviousHotspot[]>(existingHotspots);
+  const [previousVisitsLoading, setPreviousVisitsLoading] = useState(true);
   const submissionIdempotencyKey = useRef<string | null>(null);
   const [locationType, setLocationType] = useState("");
   const [locationSubtype, setLocationSubtype] = useState("");
@@ -1627,6 +1634,32 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   const gpsWatchRef = useRef<number | null>(null);
   const gpsTimeoutRef = useRef<number | null>(null);
   const bestPositionRef = useRef<GeolocationPosition | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      setPreviousVisitsLoading(true);
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch("/api/submissions/visit", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        const result = await response.json().catch(() => null) as { error?: string; visits?: PreviousHotspot[] } | null;
+        if (!response.ok || !result?.visits) {
+          throw new Error(result?.error || "Riwayat hotspot tidak dapat dimuat.");
+        }
+        setPreviousVisits(result.visits);
+      } catch (historyError) {
+        if (!controller.signal.aborted) {
+          setError(historyError instanceof Error ? historyError.message : "Riwayat hotspot tidak dapat dimuat.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setPreviousVisitsLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [user]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -1694,7 +1727,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   }, [hotspotName, village, address, user]);
 
   const selectPreviousHotspot = (id: string) => {
-    const hotspot = existingHotspots.find((item) => item.id === id);
+    const hotspot = previousVisits.find((item) => item.id === id);
     setPreviousHotspotId(id);
     if (!hotspot) return;
     setHotspotName(hotspot.name);
@@ -1703,10 +1736,14 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     setVillage(nextVillage || "");
     setAddress(hotspot.address || "");
   };
+  const changeVisitMode = (mode: "initial" | "follow_up") => {
+    setVisitMode(mode);
+    if (mode === "initial") setPreviousHotspotId("");
+  };
   const hotspotIdentity = JSON.stringify([hotspotName.trim(), village.trim(), address.trim()]);
   const activeHotspotCode = hotspotCodeIdentity === hotspotIdentity ? hotspotCode : "";
   return <>
-    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={setVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={setPreviousHotspotId} previousHotspots={existingHotspots} onSelectPreviousHotspot={selectPreviousHotspot} locationSubtypes={locationSubtypes} />
+    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={changeVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={setPreviousHotspotId} previousHotspots={previousVisits} previousVisitsLoading={previousVisitsLoading} onSelectPreviousHotspot={selectPreviousHotspot} locationSubtypes={locationSubtypes} />
     {saving && <FormSubmissionLoading />}
     <GpsConfirmationDialog key={gpsStartedAt} mode={gpsDialogMode} result={gpsCandidate} startedAt={gpsStartedAt} onCancel={cancelGps} onAccept={acceptGps} onRetry={retryGps} />
   </>;
@@ -1844,9 +1881,34 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         uploadResults.push({ fileName: uploadResult.fileName, fileId: uploadResult.fileId, fileUrl: uploadResult.fileUrl });
       }
       const normalizedHotspotCode = String(form.get("kodeHotspot") || "").trim().toUpperCase();
-      const relatedVisits = existingHotspots.filter((hotspot) => hotspot.hotspotCode?.trim().toUpperCase() === normalizedHotspotCode);
-      const previousVisit = relatedVisits[0];
-      const visitType = previousVisit ? "follow_up" : "initial";
+      const selectedVisitMode = String(form.get("visitMode") || "");
+      const selectedPreviousVisitId = String(form.get("previousHotspotId") || "").trim();
+      if (selectedVisitMode !== "initial" && selectedVisitMode !== "follow_up") {
+        throw new Error("Pilih jenis kunjungan yang valid.");
+      }
+      if (selectedVisitMode === "follow_up" && !selectedPreviousVisitId) {
+        throw new Error("Pilih hotspot dan kunjungan sebelumnya untuk Kunjungan 2.");
+      }
+      const token = await user.getIdToken();
+      const visitResponse = await fetch("/api/submissions/visit", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: selectedVisitMode,
+          hotspotCode: normalizedHotspotCode,
+          previousVisitId: selectedPreviousVisitId,
+        }),
+      });
+      const visitResult = await visitResponse.json().catch(() => null) as {
+        error?: string;
+        visitType?: "initial" | "follow_up";
+        visitNumber?: number;
+        previousVisitId?: string;
+        visitReason?: string;
+      } | null;
+      if (!visitResponse.ok || !visitResult?.visitType || !visitResult.visitNumber) {
+        throw new Error(visitResult?.error || "Riwayat kunjungan gagal diverifikasi.");
+      }
       await addDoc(collection(db, "submissions"), {
         enumeratorUid: user.uid,
         enumeratorUsername: profile?.username || "",
@@ -1854,10 +1916,10 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         organisasi: String(form.get("organisasi") || "").trim(),
         kodeHotspot: String(form.get("kodeHotspot") || "").trim(),
         hotspotKey: normalizedHotspotCode,
-        visitType,
-        visitNumber: visitType === "follow_up" ? relatedVisits.length + 1 : 1,
-        previousVisitId: previousVisit?.id || "",
-        visitReason: visitType === "follow_up" ? "Kunjungan ulang berdasarkan kode hotspot yang sama" : "",
+        visitType: visitResult.visitType,
+        visitNumber: visitResult.visitNumber,
+        previousVisitId: visitResult.previousVisitId || "",
+        visitReason: visitResult.visitReason || "",
         visitedAt: new Date().toISOString(),
         namaHotspot: String(form.get("namaHotspot") || "").trim(),
         kecamatan: String(form.get("kecamatan") || "").trim(),
