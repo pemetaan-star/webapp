@@ -24,6 +24,8 @@ FOLDER_UTAMA/
 
 Dokumen persetujuan QC tetap berada di `FOLDER_UTAMA/Persetujuan QC/`. Saat Admin menghapus data hotspot, semua file dokumentasi dan persetujuan QC yang tercatat pada data dipindahkan ke Sampah Google Drive terlebih dahulu; data Firestore baru dihapus setelah Drive mengonfirmasi keberhasilan. File yang sudah tersimpan di lokasi lama tidak dipindahkan otomatis.
 
+PNG tanda tangan Enumerator dan Koordinator disimpan di `FOLDER_UTAMA/Tanda Tangan Supervisi/`. Firestore menyimpan ID file dan metadata tanda tangan pada dokumen sesi supervisi.
+
 ## Deploy
 
 1. Buka project Apps Script khusus untuk folder `lingga/gas`.

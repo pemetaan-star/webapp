@@ -1,6 +1,6 @@
 import { getAdminAuth, getAdminDb, requireAdmin } from "@/lib/firebase-admin";
 
-const supportedRoles = new Set(["admin", "data analis", "data analyst", "koordinator", "supervisor", "enumerator"]);
+const supportedRoles = new Set(["admin", "data analis", "data analyst", "koordinator", "enumerator"]);
 const supportedOrganizations = new Set(["lgi", "igama", "wamarapa", "fatayat_nu"]);
 
 export async function GET(request: Request) {

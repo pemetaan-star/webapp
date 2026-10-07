@@ -20,14 +20,13 @@ service cloud.firestore {
 
     function isAdmin() { return signedIn() && role() == 'admin'; }
     function isEnumerator() { return signedIn() && role() == 'enumerator'; }
-    function isSupervisor() { return signedIn() && role() == 'supervisor'; }
+    function isLegacySupervisor() { return signedIn() && role() == 'supervisor'; }
     function isCoordinator() { return signedIn() && role() == 'koordinator'; }
     function isAnalyst() { return signedIn() && (role() == 'data analis' || role() == 'data analyst'); }
-    function isReviewer() { return isAdmin() || isSupervisor() || isCoordinator() || isAnalyst(); }
+    function isReviewer() { return isAdmin() || isLegacySupervisor() || isCoordinator() || isAnalyst(); }
 
     function validWorkflowStage(stage) {
       return isAdmin()
-        || (isSupervisor() && stage in ['supervisor_review', 'needs_revision'])
         || (isCoordinator() && stage in ['coordinator_review', 'analyst_review', 'needs_revision'])
         || (isAnalyst() && stage in ['analyst_review', 'finalized', 'needs_revision']);
     }
@@ -68,21 +67,57 @@ service cloud.firestore {
       allow create: if isEnumerator() && validSubmission(request.resource.data);
       allow read: if signedIn() && (isReviewer() || resource.data.enumeratorUid == request.auth.uid);
       allow delete: if isAdmin();
-      allow update: if isReviewer()
+      allow update: if isAdmin()
         && request.resource.data.enumeratorUid == resource.data.enumeratorUid
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'qcStatus', 'qcKelengkapan', 'qcDuplikasi', 'qcKroscek', 'qcNote',
           'qcNamaPemeriksa', 'qcTanggalPemeriksaan', 'qcDokumenPersetujuan',
-          'qcReviewerUid', 'qcReviewedAt', 'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
+          'qcReviewerUid', 'qcReviewedAt', 'coordinatorReviewStatus', 'coordinatorReviewNote',
+          'coordinatorReviewKelengkapan', 'coordinatorReviewDuplikasi', 'coordinatorReviewKroscek',
+          'coordinatorReviewerUid', 'coordinatorReviewedAt', 'coordinatorReviewerName', 'coordinatorReviewDate',
+          'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
         ])
-        && validWorkflowStage(request.resource.data.workflowStage);
+        && validWorkflowStage(request.resource.data.workflowStage)
+        || (isCoordinator()
+          && request.resource.data.enumeratorUid == resource.data.enumeratorUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && resource.data.workflowStage in ['submitted', 'supervisor_review', 'coordinator_review', 'needs_revision']
+          && request.resource.data.coordinatorReviewStatus in ['Valid', 'Pending', 'Perlu perbaikan']
+          && (
+            (request.resource.data.coordinatorReviewStatus == 'Valid' && request.resource.data.workflowStage == 'analyst_review')
+            || (request.resource.data.coordinatorReviewStatus == 'Pending' && request.resource.data.workflowStage == 'coordinator_review')
+            || (request.resource.data.coordinatorReviewStatus == 'Perlu perbaikan' && request.resource.data.workflowStage == 'needs_revision')
+          )
+          && (request.resource.data.coordinatorReviewStatus != 'Perlu perbaikan' || request.resource.data.coordinatorReviewNote.size() > 0)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'coordinatorReviewStatus', 'coordinatorReviewNote', 'coordinatorReviewKelengkapan',
+            'coordinatorReviewDuplikasi', 'coordinatorReviewKroscek', 'coordinatorReviewerUid',
+            'coordinatorReviewedAt', 'coordinatorReviewerName', 'coordinatorReviewDate',
+            'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
+          ]))
+        || (isAnalyst()
+          && request.resource.data.enumeratorUid == resource.data.enumeratorUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && resource.data.workflowStage == 'analyst_review'
+          && request.resource.data.qcStatus in ['valid', 'pending', 'perlu_perbaikan']
+          && (
+            (request.resource.data.qcStatus == 'valid' && request.resource.data.workflowStage == 'finalized')
+            || (request.resource.data.qcStatus == 'pending' && request.resource.data.workflowStage == 'analyst_review')
+            || (request.resource.data.qcStatus == 'perlu_perbaikan' && request.resource.data.workflowStage == 'needs_revision')
+          )
+          && (request.resource.data.qcStatus != 'perlu_perbaikan' || request.resource.data.qcNote.size() > 0)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'qcStatus', 'qcKelengkapan', 'qcDuplikasi', 'qcKroscek', 'qcNote',
+            'qcNamaPemeriksa', 'qcTanggalPemeriksaan', 'qcDokumenPersetujuan',
+            'qcReviewerUid', 'qcReviewedAt', 'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
+          ]));
     }
 
     match /supervisions/{supervisionId} {
-      allow create: if (isSupervisor() || isCoordinator() || isAdmin())
-        && request.resource.data.supervisorUid == request.auth.uid
-        && request.resource.data.workflowStage == 'supervisor_review'
+      allow create: if (isCoordinator() || isAdmin())
+        && request.resource.data.coordinatorUid == request.auth.uid
+        && request.resource.data.workflowStage == 'coordinator_review'
         && request.resource.data.checks.keys().size() == 12;
       allow read: if isReviewer() || (signedIn() && resource.data.supervisorUid == request.auth.uid);
       allow update, delete: if isAdmin();

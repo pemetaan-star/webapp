@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     const folderName = typeof payload.folderName === "string" ? payload.folderName.trim() : "";
     const enumeratorName = typeof payload.enumeratorName === "string" ? payload.enumeratorName.trim() : "";
     const hotspotCode = typeof payload.hotspotCode === "string" ? payload.hotspotCode.trim() : "";
+    const dedicatedFolder = folderName === "Persetujuan QC" || folderName === "Tanda Tangan Supervisi";
     const allowedMime = /^(image\/(jpeg|png|gif|webp)|application\/(pdf|msword)|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/i;
     if (fileData.length > 2_700_000) {
       return NextResponse.json({ message: "Foto terlalu besar. Pilih foto yang lebih kecil." }, { status: 413 });
@@ -25,7 +26,10 @@ export async function POST(request: Request) {
     if (!fileData || !fileName || !idempotencyKey || !allowedMime.test(fileMime)) {
       return NextResponse.json({ message: "Dokumen tidak valid atau melebihi batas ukuran." }, { status: 400 });
     }
-    if (folderName !== "Persetujuan QC" && (!enumeratorName || !hotspotCode)) {
+    if (folderName === "Tanda Tangan Supervisi" && (fileMime !== "image/png" || !/^supervisi-[a-zA-Z0-9_-]+-(enumerator|koordinator)\.png$/.test(fileName))) {
+      return NextResponse.json({ message: "File tanda tangan supervisi tidak valid." }, { status: 400 });
+    }
+    if (!dedicatedFolder && (!enumeratorName || !hotspotCode)) {
       return NextResponse.json({ message: "Nama enumerator dan kode hotspot wajib diisi." }, { status: 400 });
     }
     const response = await fetch(gasUploadUrl, {

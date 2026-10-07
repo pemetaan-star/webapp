@@ -308,6 +308,33 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .workflow-timeline-content p { margin: 3px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dashboard-summary-error { margin: -7px 0 16px; padding: 10px 12px; border: 1px solid #f0c5be; border-radius: 8px; color: #9b3d31; background: #fff5f3; font-size: .72rem; }
 .dashboard-summary-error button { margin-left: 6px; padding: 0; border: 0; color: #873328; background: transparent; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.role-workflow-guide { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; border-left: 4px solid var(--teal); }
+.role-workflow-guide h2 { margin: 0 0 5px; font: 700 1rem 'Space Grotesk'; }
+.role-workflow-guide p:not(.eyebrow) { max-width: 900px; margin: 0 0 8px; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+.role-workflow-steps { display: grid; gap: 7px; max-width: 900px; margin: 10px 0 12px; padding: 0; list-style: none; counter-reset: workflow-step; }
+.role-workflow-steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 9px; color: var(--muted); font-size: .76rem; line-height: 1.5; counter-increment: workflow-step; }
+.role-workflow-steps li::before { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; color: var(--teal); background: #eaf7f5; content: counter(workflow-step); font-size: .65rem; font-weight: 700; line-height: 1; }
+.role-workflow-guide > div > strong { color: var(--teal); font-size: .72rem; }
+.role-workflow-count { min-width: 90px; color: var(--teal); font: 700 1.8rem 'Space Grotesk'; text-align: center; }
+.role-workflow-count small { display: block; color: var(--muted); font: 500 .64rem 'DM Sans'; line-height: 1.4; }
+.role-review-guidance { margin: 0; padding: 11px 13px; border-left: 3px solid var(--teal); border-radius: 6px; color: var(--ink); background: #eaf7f5; font-size: .74rem; line-height: 1.5; }
+.signature-field { display: grid; gap: 7px; }
+.signature-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.supervision-sign-grid .signature-field-heading strong { color: var(--ink); font: 700 .72rem 'DM Sans', sans-serif; text-transform: none; }
+.signature-field-heading .button { min-height: 0; padding: 4px 8px; font-size: .67rem; }
+.signature-canvas { display: block; width: 100%; height: 145px; border: 1px dashed #9aaeb9; border-radius: 8px; background: #fff; cursor: crosshair; touch-action: none; }
+.signature-field > small { color: var(--muted); font-size: .66rem; line-height: 1.4; }
+.supervision-form .signature-attendance { display: flex; grid-template-columns: auto minmax(0, 1fr); align-items: flex-start; gap: 9px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; font-weight: 500; line-height: 1.45; }
+.supervision-form .signature-attendance input { flex: 0 0 auto; margin-top: 2px; accent-color: var(--teal); }
+.workflow-badge { display: inline-flex; padding: 4px 7px; border-radius: 6px; color: #245e72; background: #e5f2f5; font-size: .62rem; font-weight: 700; white-space: nowrap; }
+.supervision-hotspot-select { display: grid; gap: 8px; margin: 0; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
+.supervision-hotspot-select legend { padding: 0 5px; color: var(--ink); font-size: .76rem; font-weight: 700; }
+.supervision-hotspot-select > label { display: flex; grid-template-columns: auto minmax(0, 1fr); align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+.supervision-hotspot-select > label > input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--teal); }
+.supervision-hotspot-select > label span { display: grid; gap: 3px; min-width: 0; }
+.supervision-hotspot-select > label small, .supervision-hotspot-select > small { color: var(--muted); font-size: .68rem; line-height: 1.45; }
+.supervision-hotspot-select > small { display: block; }
+@media (max-width: 600px) { .role-workflow-guide { align-items: start; gap: 10px; padding: 13px; }.role-workflow-count { min-width: 65px; font-size: 1.45rem; } }
 @media (max-width: 600px) {
   .dashboard-page .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 11px; }
   .dashboard-page .kpi-card { min-height: 104px; padding: 10px; border-radius: 11px; }

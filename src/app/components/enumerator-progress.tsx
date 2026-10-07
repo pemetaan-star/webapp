@@ -4,11 +4,10 @@ import { PanelHeading } from "@/app/components/dashboard";
 import { workflowStages, type DashboardSummary, type WorkflowStage } from "@/lib/dashboard-summary";
 
 const stageLabels: Record<WorkflowStage, string> = {
-  submitted: "Terkirim",
-  supervisor_review: "Supervisi",
-  coordinator_review: "Koordinator",
+  submitted: "Menunggu Koordinator",
+  coordinator_review: "Supervisi Koordinator",
   analyst_review: "Data Analis",
-  finalized: "Final",
+  finalized: "Database final",
   needs_revision: "Perlu perbaikan",
 };
 
@@ -37,7 +36,7 @@ export function EnumeratorProgress({
       ) : summary?.enumerators.length ? (
         <div className="enumerator-progress-list">
           {summary.enumerators.map((enumerator) => {
-            const checked = enumerator.qc.valid + enumerator.qc.needsRevision;
+            const checked = enumerator.stages.finalized;
             const checkedPercent = enumerator.total ? Math.round((checked / enumerator.total) * 100) : 0;
 
             return (
@@ -52,7 +51,7 @@ export function EnumeratorProgress({
                 </div>
                 <div className="enumerator-progress-review">
                   <div className="enumerator-progress-review-label">
-                    <span>Sudah diperiksa QC</span>
+                    <span>Sudah mencapai database final</span>
                     <strong>{checked} dari {enumerator.total} · {checkedPercent}%</strong>
                   </div>
                   <div

@@ -2,7 +2,7 @@
 
 import NextImage from "next/image";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { addDoc, arrayUnion, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, writeBatch, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
@@ -12,7 +12,7 @@ import { DashboardOverview } from "@/app/components/dashboard-overview";
 import { DashboardAnalytics } from "@/app/components/dashboard-analytics";
 import { EnumeratorProgress } from "@/app/components/enumerator-progress";
 import { displayPopulation, ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
-import type { DashboardSummary, WorkflowStage } from "@/lib/dashboard-summary";
+import { canReviewWorkflowStage, normalizeWorkflowStage, type DashboardSummary, type WorkflowStage } from "@/lib/dashboard-summary";
 
 type Hotspot = {
   id: string;
@@ -22,7 +22,7 @@ type Hotspot = {
   population: string;
   status: "Aktif" | "Baru" | "Tidak aktif" | "Perlu verifikasi";
   qc: "Valid" | "Pending" | "Perlu perbaikan";
-  workflowStage: "submitted" | "supervisor_review" | "coordinator_review" | "analyst_review" | "finalized" | "needs_revision";
+  workflowStage: WorkflowStage;
   workflowHistory?: Array<{ stage: WorkflowStage; role: string; uid: string; actorName?: string; at: string; note?: string }>;
   createdAt: string;
   hotspotCode?: string;
@@ -52,6 +52,13 @@ type Hotspot = {
   qcNote?: string;
   qcInspector?: string;
   qcDate?: string;
+  coordinatorReviewStatus?: "Valid" | "Pending" | "Perlu perbaikan";
+  coordinatorReviewNote?: string;
+  coordinatorReviewKelengkapan?: string;
+  coordinatorReviewDuplikasi?: string;
+  coordinatorReviewKroscek?: string;
+  coordinatorReviewerName?: string;
+  coordinatorReviewDate?: string;
 };
 
 type SubmissionCursor = QueryDocumentSnapshot<DocumentData> | null;
@@ -92,25 +99,20 @@ function displayRole(role?: string) {
     case "dataanalyst": return "Data Analis";
     case "koordinator":
     case "kordinator": return "Koordinator";
-    case "supervisor": return "Supervisor";
+    case "supervisor": return "Supervisor (perlu migrasi)";
     case "enumerator": return "Enumerator";
     default: return "Pengguna";
   }
 }
 
 const statusClass: Record<Hotspot["status"], string> = { Aktif: "status-good", Baru: "status-new", "Tidak aktif": "status-off", "Perlu verifikasi": "status-off" };
-const qcClass: Record<Hotspot["qc"], string> = { Valid: "qc-valid", Pending: "qc-pending", "Perlu perbaikan": "qc-repair" };
 const workflowStageLabels: Record<Hotspot["workflowStage"], string> = {
-  submitted: "Terkirim",
-  supervisor_review: "Pemeriksaan Supervisor",
-  coordinator_review: "Pemeriksaan Koordinator",
+  submitted: "Menunggu supervisi Koordinator",
+  coordinator_review: "Supervisi Koordinator",
   analyst_review: "Pemeriksaan Data Analis",
-  finalized: "Final",
+  finalized: "Database final",
   needs_revision: "Perlu perbaikan",
 };
-function displayQcStatus(status: Hotspot["qc"]) {
-  return status === "Pending" ? "Menunggu" : status;
-}
 const locationSubtypes: Record<string, Array<[string, string]>> = {
   ruang_publik: [["jalanan_mangkal", "Jalanan / Titik Mangkal"], ["taman_kota", "Taman Kota / Alun-Alun / Halaman"], ["stasiun_terminal", "Stasiun / Terminal / Halte"], ["mall", "Mall"], ["makam", "Makam"], ["bangunan_kosong", "Bangunan Kosong / Mangkrak"], ["ruang_publik_lainnya", "Lainnya"]],
   tempat_makan_hiburan: [["warung_makan", "Warung Kopi / Warung Makan"], ["kafe_restoran", "Kafe / Restoran"], ["bar_club", "Bar / Club / Diskotik"], ["karaoke", "Karaoke (Hall / Room)"], ["tempat_makan_lainnya", "Lainnya"]],
@@ -137,7 +139,7 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
     const enumeratorName = profileName || (storedName && !storedName.includes("@") ? storedName : "Nama belum diatur");
     const status = String(data.statusHotspot || "").toLowerCase();
     const qc = String(data.qcStatus || "pending").toLowerCase();
-    const workflowStage = String(data.workflowStage || "submitted") as Hotspot["workflowStage"];
+    const workflowStage = normalizeWorkflowStage(data.workflowStage);
     const documents = (Array.isArray(data.documents) ? data.documents : data.document ? [data.document] : [])
       .filter((document): document is Record<string, unknown> => typeof document === "object" && document !== null)
       .map((document) => ({
@@ -152,9 +154,8 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       ? data.workflowHistory
         .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
         .map((entry) => {
-          const stage = String(entry.stage || "submitted") as WorkflowStage;
           return {
-            stage: (["submitted", "supervisor_review", "coordinator_review", "analyst_review", "finalized", "needs_revision"] as const).includes(stage) ? stage : "submitted",
+            stage: normalizeWorkflowStage(entry.stage),
             role: String(entry.role || ""),
             uid: String(entry.uid || ""),
             actorName: String(entry.actorName || ""),
@@ -172,6 +173,13 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       status: status === "baru" ? "Baru" : status === "tidak_aktif" ? "Tidak aktif" : status === "perlu_verifikasi" || status === "perlu_klarifikasi" ? "Perlu verifikasi" : "Aktif",
       qc: qc === "valid" ? "Valid" : qc === "perlu_perbaikan" ? "Perlu perbaikan" : "Pending",
       workflowStage: workflowStageLabels[workflowStage] ? workflowStage : "submitted",
+      coordinatorReviewStatus: data.coordinatorReviewStatus === "Valid" || data.coordinatorReviewStatus === "Perlu perbaikan" ? data.coordinatorReviewStatus : data.coordinatorReviewStatus === "Pending" ? "Pending" : undefined,
+      coordinatorReviewNote: String(data.coordinatorReviewNote || ""),
+      coordinatorReviewKelengkapan: String(data.coordinatorReviewKelengkapan || ""),
+      coordinatorReviewDuplikasi: String(data.coordinatorReviewDuplikasi || ""),
+      coordinatorReviewKroscek: String(data.coordinatorReviewKroscek || ""),
+      coordinatorReviewerName: String(data.coordinatorReviewerName || ""),
+      coordinatorReviewDate: String(data.coordinatorReviewDate || ""),
       hotspotCode: String(data.kodeHotspot || ""),
       verificationStatus: String(data.statusVerifikasi || ""),
       coordinates: String(data.koordinat || ""),
@@ -215,7 +223,7 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
   const [loginError, setLoginError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"Semua" | Hotspot["qc"]>("Semua");
+  const [filter, setFilter] = useState<"Semua" | WorkflowStage>("Semua");
   const [lastUpdated, setLastUpdated] = useState("baru saja");
   const [hotspotRows, setHotspotRows] = useState<Hotspot[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -241,7 +249,7 @@ export default function Home() {
   const qcUploadKeys = useRef<Record<string, string>>({});
   const filteredHotspots = useMemo(() => hotspotRows.filter((hotspot) => {
     const matchesQuery = Object.values(hotspot).join(" ").toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesQuery && (filter === "Semua" || hotspot.qc === filter);
+    return matchesQuery && (filter === "Semua" || hotspot.workflowStage === filter);
   }), [filter, hotspotRows, searchQuery]);
   const totalHotspots = dashboardSummary?.total;
   const activeHotspots = dashboardSummary?.active;
@@ -250,13 +258,21 @@ export default function Home() {
   const hivTests = dashboardSummary?.hivTests;
   const roleKey = normalizeRole(userProfile?.role);
   const isEnumerator = roleKey === "enumerator";
-  const isSupervisor = roleKey.includes("supervisor") || roleKey.includes("supervisi");
+  const isLegacySupervisor = roleKey === "supervisor";
   const isCoordinator = roleKey.includes("koordinator") || roleKey.includes("kordinator") || roleKey.includes("koor");
   const isAnalyst = roleKey.includes("dataanalis") || roleKey.includes("dataanalyst");
   const isReviewer = isCoordinator || isAnalyst || roleKey === "admin";
-  const canSupervise = !isEnumerator && (isReviewer || isSupervisor);
-  const roleTitle = isEnumerator ? "Ruang Kerja Enumerator" : isReviewer ? "Dashboard Koordinator & Data Analis" : roleKey.includes("super") ? "Dashboard Supervisor" : "Dashboard Pendataan Hotspot";
-  const roleSubtitle = isEnumerator ? "Kelola pendataan dan pantau hasil pemeriksaan hotspot yang Anda kirim." : "Pantau hasil survei lapangan dan proses pemeriksaan kualitas data.";
+  const reviewerKind = roleKey === "admin" ? "admin" : isCoordinator ? "coordinator" : isAnalyst ? "analyst" : "other";
+  const canSupervise = isCoordinator || roleKey === "admin";
+  const roleTitle = isEnumerator ? "Ruang Kerja Enumerator" : isCoordinator ? "Dashboard Koordinator" : isAnalyst ? "Dashboard Data Analis" : roleKey === "admin" ? "Dashboard Administrator" : isLegacySupervisor ? "Akun Supervisor lama" : "Dashboard Pendataan Hotspot";
+  const roleSubtitle = isEnumerator
+    ? "Kelola pendataan dan pantau hasil pemeriksaan hotspot yang Anda kirim."
+    : isCoordinator
+      ? "Koordinasikan pemetaan, supervisi lapangan, dan tindak lanjut hasil verifikasi."
+      : isAnalyst
+        ? "Periksa, bersihkan, validasi, dan analisis data hotspot untuk database dan peta final."
+        : "Pantau hasil survei lapangan dan proses pemeriksaan kualitas data.";
+  const canReviewSelectedHotspot = Boolean(selectedHotspot && reviewerKind !== "coordinator" && canReviewWorkflowStage(reviewerKind, selectedHotspot.workflowStage));
 
   const refreshDashboardSummary = useCallback(async (requestUser: User | null, requestProfile: UserProfile | null) => {
     if (!requestUser || !requestProfile) return;
@@ -432,7 +448,11 @@ export default function Home() {
   }
 
   async function saveQcStatus(payload: { status: Hotspot["qc"]; note: string; kelengkapan: string; duplikasi: string; kroscek: string; pemeriksa: string; tanggal: string; document?: File }) {
-    if (!db || !selectedHotspot || !isReviewer) return;
+    if (!db || !selectedHotspot || reviewerKind === "coordinator" || !canReviewWorkflowStage(reviewerKind, selectedHotspot.workflowStage)) {
+      throw new Error("Data ini tidak berada pada tahap yang dapat Anda tangani.");
+    }
+    const isCoordinatorReview = (isCoordinator && roleKey !== "admin")
+      || (roleKey === "admin" && selectedHotspot.workflowStage !== "analyst_review");
     let approvalDocument: { name: string; fileId: string; url: string } | null = null;
     if (payload.document?.size) {
       const idempotencyKey = qcUploadKeys.current[selectedHotspot.id] || crypto.randomUUID();
@@ -445,21 +465,35 @@ export default function Home() {
     const workflowStage: Hotspot["workflowStage"] = payload.status === "Perlu perbaikan"
       ? "needs_revision"
       : payload.status === "Valid"
-        ? (isAnalyst || roleKey === "admin" ? "finalized" : "analyst_review")
-        : (isCoordinator ? "coordinator_review" : "analyst_review");
+        ? (isCoordinatorReview ? "analyst_review" : "finalized")
+        : (isCoordinatorReview ? "coordinator_review" : "analyst_review");
     const reviewedAt = new Date().toISOString();
     try {
       await updateDoc(doc(db, "submissions", selectedHotspot.id), {
-        qcStatus: payload.status === "Valid" ? "valid" : payload.status === "Perlu perbaikan" ? "perlu_perbaikan" : "pending",
-        qcKelengkapan: payload.kelengkapan,
-        qcDuplikasi: payload.duplikasi,
-        qcKroscek: payload.kroscek,
-        qcNote: payload.note,
-        qcNamaPemeriksa: payload.pemeriksa,
-        qcTanggalPemeriksaan: payload.tanggal,
-        ...(approvalDocument ? { qcDokumenPersetujuan: approvalDocument } : {}),
-        qcReviewerUid: authUser?.uid || "",
-        qcReviewedAt: reviewedAt,
+        ...(isCoordinatorReview ? {
+          coordinatorReviewStatus: payload.status,
+          coordinatorReviewNote: payload.note,
+          coordinatorReviewKelengkapan: payload.kelengkapan,
+          coordinatorReviewDuplikasi: payload.duplikasi,
+          coordinatorReviewKroscek: payload.kroscek,
+          coordinatorReviewerName: payload.pemeriksa,
+          coordinatorReviewDate: payload.tanggal,
+          coordinatorReviewerUid: authUser?.uid || "",
+          coordinatorReviewedAt: reviewedAt,
+        } : {
+          qcStatus: payload.status === "Valid" ? "valid" : payload.status === "Perlu perbaikan" ? "perlu_perbaikan" : "pending",
+          qcKelengkapan: payload.kelengkapan,
+          qcDuplikasi: payload.duplikasi,
+          qcKroscek: payload.kroscek,
+          qcNote: payload.note,
+          qcNamaPemeriksa: payload.pemeriksa,
+          qcTanggalPemeriksaan: payload.tanggal,
+        }),
+        ...(!isCoordinatorReview ? {
+          ...(approvalDocument ? { qcDokumenPersetujuan: approvalDocument } : {}),
+          qcReviewerUid: authUser?.uid || "",
+          qcReviewedAt: reviewedAt,
+        } : {}),
         workflowStage,
         workflowUpdatedByRole: userProfile?.role || "",
         workflowHistory: arrayUnion({
@@ -475,7 +509,19 @@ export default function Home() {
       const code = error instanceof Error && "code" in error ? String(error.code) : "";
       throw new Error(code === "permission-denied" ? "Anda tidak memiliki akses untuk menyimpan hasil pemeriksaan ini." : "Hasil pemeriksaan gagal disimpan. Silakan coba lagi.");
     }
-    setHotspotRows((rows) => rows.map((row) => row.id === selectedHotspot.id ? { ...row, qc: payload.status } : row));
+    setHotspotRows((rows) => rows.map((row) => row.id === selectedHotspot.id ? {
+      ...row,
+      workflowStage,
+      ...(isCoordinatorReview ? {
+        coordinatorReviewStatus: payload.status,
+        coordinatorReviewNote: payload.note,
+        coordinatorReviewKelengkapan: payload.kelengkapan,
+        coordinatorReviewDuplikasi: payload.duplikasi,
+        coordinatorReviewKroscek: payload.kroscek,
+        coordinatorReviewerName: payload.pemeriksa,
+        coordinatorReviewDate: payload.tanggal,
+      } : { qc: payload.status }),
+    } : row));
     void refreshDashboardSummary(authUser, userProfile);
     setLastUpdated("sekarang");
     setShowQcModal(false);
@@ -584,7 +630,35 @@ export default function Home() {
       <nav className="topbar"><div className="brand"><span className="brand-mark"><NextImage src="/lingga-indonesia-icon.svg" alt="Lingga Indonesia" width={30} height={30} /></span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{displayRole(userProfile?.role)}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
       <main className="dashboard-content">
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Pemantauan & Pemeriksaan Kualitas"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Pembaruan data <strong>{lastUpdated}</strong></div></section>
+        {isLegacySupervisor && <p className="dashboard-summary-error" role="status">Role Supervisor tidak digunakan dalam proposal kegiatan. Hubungi Admin untuk mengubah role akun menjadi Koordinator Kegiatan.</p>}
         {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Menunggu pemeriksaan</strong><p>Pantau status data yang sudah Anda kirim.</p></div>        <strong className="role-action-count">{pendingQc ?? "—"}</strong></article></section>}
+        {(isCoordinator || isAnalyst) && <section className="panel role-workflow-guide" aria-label={`Panduan tugas ${isCoordinator ? "Koordinator" : "Data Analis"}`}>
+          <div>
+            <p className="eyebrow">Panduan teknis dashboard</p>
+            <h2>{isCoordinator ? "Proses supervisi hotspot" : "Proses pemeriksaan data"}</h2>
+            <ol className="role-workflow-steps">
+              {(isCoordinator
+                ? [
+                    "Buka hotspot berstatus Menunggu supervisi Koordinator atau Perlu perbaikan, lalu periksa detailnya.",
+                    "Klik Form Supervisi, pilih enumerator, dan centang hanya hotspot yang diperiksa pada sesi ini.",
+                    "Isi semua checklist, temuan, kendala, dan tindak lanjut.",
+                    "Pilih kesimpulan: Lolos meneruskan data ke Data Analis; Pending mempertahankannya di antrean Koordinator; Perlu perbaikan mengirimnya ke tindak lanjut.",
+                    "Simpan supervisi. Hasil diterapkan hanya ke hotspot yang dicentang.",
+                  ]
+                : [
+                    "Buka hotspot berstatus Pemeriksaan Data Analis, lalu periksa detail isian dan dokumen pendukung.",
+                    "Isi kelengkapan, indikasi duplikasi, dan hasil kroscek pada form pemeriksaan.",
+                    "Pilih hasil: Valid memfinalkan data; Pending mempertahankannya di antrean Analis; Perlu perbaikan mengirimnya ke tindak lanjut.",
+                    "Isi catatan bila perlu perbaikan. Tambahkan dokumen persetujuan bila diperlukan, lalu simpan hasil pemeriksaan.",
+                  ]
+              ).map((step) => <li key={step}>{step}</li>)}
+            </ol>
+            <strong>{isCoordinator
+              ? "Hasil supervisi diterapkan hanya ke hotspot yang dicentang."
+              : "Pemeriksaan dilakukan per hotspot yang sudah lolos supervisi Koordinator."}</strong>
+          </div>
+          <span className="role-workflow-count">{hotspotRows.filter((row) => canReviewWorkflowStage(reviewerKind, row.workflowStage)).length}<small>siap ditangani<br />dari data termuat</small></span>
+        </section>}
         <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={totalHotspots === undefined ? "—" : String(totalHotspots)} note={dashboardSummaryLoading ? "Memuat seluruh data..." : dashboardSummaryError || "Total seluruh data"} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={activeHotspots === undefined ? "—" : String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={pendingQc === undefined ? "—" : String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={hivPositive === undefined ? "—" : String(hivPositive)} suffix={hivTests === undefined ? "" : `/ ${hivTests} Tes`} note="Akumulasi seluruh data" icon="♥" /></section>
         {dataError && <p className="dashboard-summary-error" role="alert">{dataError}</p>}
         {dashboardSummaryError && <p className="dashboard-summary-error" role="alert">{dashboardSummaryError} <button type="button" onClick={() => void refreshDashboardSummary(authUser, userProfile)}>Coba lagi</button></p>}
@@ -619,9 +693,20 @@ export default function Home() {
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}
       {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} existingHotspots={hotspotRows} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); void refreshDashboardSummary(authUser, userProfile); }} />}
-      {canSupervise && authUser && <SupervisorForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={() => { setShowSupervisionForm(false); setLastUpdated("sekarang"); }} />}
-      {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={isReviewer} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
-      {selectedHotspot && showQcModal && <ReviewQcModal key={`${selectedHotspot.id}-${authUser?.uid || ""}`} hotspot={selectedHotspot} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} onAiReview={reviewQcWithAi} reviewerName={userProfile?.nama || userProfile?.name || authUser?.displayName || authUser?.email?.split("@")[0] || ""} />}
+      {canSupervise && authUser && <CoordinatorSupervisionForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={(submissionIds, decision, note, date) => {
+        setShowSupervisionForm(false);
+        setHotspotRows((current) => current.map((row) => submissionIds.includes(row.id) ? {
+          ...row,
+          workflowStage: decision === "valid" ? "analyst_review" : decision === "needs_revision" ? "needs_revision" : "coordinator_review",
+          coordinatorReviewStatus: decision === "valid" ? "Valid" : decision === "needs_revision" ? "Perlu perbaikan" : "Pending",
+          coordinatorReviewNote: note,
+          coordinatorReviewDate: date,
+        } : row));
+        setLastUpdated("sekarang");
+        void refreshDashboardSummary(authUser, userProfile);
+      }} />}
+      {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={canReviewSelectedHotspot} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
+      {selectedHotspot && showQcModal && canReviewSelectedHotspot && <ReviewQcModal key={`${selectedHotspot.id}-${authUser?.uid || ""}`} hotspot={selectedHotspot} reviewerRole={isCoordinator && roleKey !== "admin" || roleKey === "admin" && selectedHotspot.workflowStage !== "analyst_review" ? "coordinator" : "analyst"} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} onAiReview={reviewQcWithAi} reviewerName={userProfile?.nama || userProfile?.name || authUser?.displayName || authUser?.email?.split("@")[0] || ""} />}
     </div>
   );
 }
@@ -657,8 +742,8 @@ function SubmissionTable({
   isAdmin: boolean;
   searchQuery: string;
   onSearchChange: (value: string) => void;
-  filter: "Semua" | Hotspot["qc"];
-  onFilterChange: (value: "Semua" | Hotspot["qc"]) => void;
+  filter: "Semua" | WorkflowStage;
+  onFilterChange: (value: "Semua" | WorkflowStage) => void;
   loading: boolean;
   canLoadMore: boolean;
   loadingMore: boolean;
@@ -677,17 +762,17 @@ function SubmissionTable({
       <div><PanelHeading icon="≡" title={title} subtitle={subtitle} /></div>
       <div className="table-controls">
         <div className="search-box"><span>⌕</span><input value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Cari nama / kelurahan..." /></div>
-        <select value={filter} onChange={(event) => onFilterChange(event.target.value as "Semua" | Hotspot["qc"])} aria-label="Filter status pemeriksaan">
-          <option>Semua</option><option>Valid</option><option value="Pending">Menunggu</option><option>Perlu perbaikan</option>
+        <select value={filter} onChange={(event) => onFilterChange(event.target.value as "Semua" | WorkflowStage)} aria-label="Filter tahapan workflow">
+          <option value="Semua">Semua tahapan</option>{Object.entries(workflowStageLabels).map(([stage, label]) => <option key={stage} value={stage}>{label}</option>)}
         </select>
       </div>
     </div>
     <div className="table-wrap"><table>
-      <thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>HASIL PEMERIKSAAN</th><th>AKSI</th></tr></thead>
+      <thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>TAHAP WORKFLOW</th><th>AKSI</th></tr></thead>
       <tbody>{rows.map((hotspot) => <tr key={hotspot.id}>
         <td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td>
         <td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td>
-        <td><span className={`qc-badge ${qcClass[hotspot.qc]}`}>{displayQcStatus(hotspot.qc)}</span></td>
+        <td><span className="workflow-badge">{workflowStageLabels[hotspot.workflowStage]}</span></td>
         <td><button className="row-action" onClick={() => onView(hotspot)} aria-label={`Lihat detail ${hotspot.name}`}>→</button>
           {isAdmin && <button type="button" className="row-action row-action-danger" onClick={() => onDelete(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}
         </td>
@@ -725,9 +810,10 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
   const [savingUser, setSavingUser] = useState(false);
   const savingUserRef = useRef(false);
   const isFormOpen = Boolean(editingUser) || creatingUser;
+  const storedRole = normalizeRole(editingUser?.role);
   const currentRole = roleOverride?.userId === (editingUser?.id || null)
     ? roleOverride.role
-    : editingUser?.role || "enumerator";
+    : storedRole === "supervisor" ? "koordinator" : editingUser?.role || "enumerator";
 
   async function submitUser(event: React.FormEvent<HTMLFormElement>) {
     if (savingUserRef.current) {
@@ -764,7 +850,7 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
             <label>Email<input name="email" type="email" defaultValue={editingUser?.email || ""} required /></label>
             <label>Nama<input name="nama" defaultValue={editingUser?.nama || ""} required /></label>
             {creatingUser && <label>Password awal<input name="password" type="password" autoComplete="new-password" minLength={6} required /></label>}
-            <label>Role<select name="role" value={currentRole} onChange={(event) => setRoleOverride({ userId: editingUser?.id || null, role: event.target.value })}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="koordinator">Koordinator</option><option value="supervisor">Supervisor</option><option value="enumerator">Enumerator</option></select></label>
+            <label>Role<select name="role" value={currentRole} onChange={(event) => setRoleOverride({ userId: editingUser?.id || null, role: event.target.value })}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="koordinator">Koordinator</option><option value="enumerator">Enumerator</option></select>{storedRole === "supervisor" && <small>Role lama akan dialihkan ke Koordinator sesuai proposal.</small>}</label>
             {(creatingUser || editingUser) && currentRole === "enumerator" && <label>Organisasi Enumerator<select name="organisasi" defaultValue={editingUser?.organisasi || ""} required><option value="">Pilih organisasi</option>{organizationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
             {savingUser && <div className="form-saving-indicator form-wide" role="status" aria-live="polite"><span className="form-saving-brand" aria-hidden="true" /><strong>Menyimpan user...</strong><small>{creatingUser ? "Membuat akun dan profil user." : "Memperbarui profil user."}</small><i className="form-saving-track" aria-hidden="true" /></div>}
             <div className="user-modal-actions">
@@ -849,12 +935,145 @@ const supervisionQualityChecks = [
   "Data sesuai dengan definisi operasional yang ditetapkan",
 ];
 
-function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }: { open: boolean; user: User; profile: UserProfile | null; rows: Hotspot[]; onOpen: () => void; onClose: () => void; onSaved: () => void }) {
+type SupervisionDecision = "valid" | "pending" | "needs_revision";
+
+type SupervisionSignature = {
+  dataUrl: string;
+  signedAt: string;
+  idempotencyKey: string;
+};
+
+function SupervisionSignatureCanvas({ label, signature, onChange }: {
+  label: string;
+  signature: SupervisionSignature | null;
+  onChange: (signature: SupervisionSignature | null) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+  const hasInk = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const resize = () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      if (!width || !height) return;
+      const previous = document.createElement("canvas");
+      previous.width = canvas.width;
+      previous.height = canvas.height;
+      previous.getContext("2d")?.drawImage(canvas, 0, 0);
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.lineWidth = 2.5;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      if (previous.width && previous.height) context.drawImage(previous, 0, 0, width, height);
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    resize();
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (signature) return;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    const { width, height } = canvas.getBoundingClientRect();
+    context.clearRect(0, 0, width, height);
+    hasInk.current = false;
+  }, [signature]);
+
+  function point(event: React.PointerEvent<HTMLCanvasElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  }
+
+  function startDrawing(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const canvas = event.currentTarget;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    drawing.current = true;
+    const { x, y } = point(event);
+    context.beginPath();
+    context.arc(x, y, 1.25, 0, Math.PI * 2);
+    context.fill();
+    context.beginPath();
+    context.moveTo(x, y);
+    hasInk.current = true;
+  }
+
+  function draw(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (!drawing.current) return;
+    event.preventDefault();
+    const { x, y } = point(event);
+    const context = event.currentTarget.getContext("2d");
+    if (!context) return;
+    context.lineTo(x, y);
+    context.stroke();
+  }
+
+  function finishDrawing(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (!drawing.current) return;
+    drawing.current = false;
+    const canvas = event.currentTarget;
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (hasInk.current) {
+      onChange({
+        dataUrl: canvas.toDataURL("image/png"),
+        signedAt: new Date().toISOString(),
+        idempotencyKey: crypto.randomUUID(),
+      });
+    }
+  }
+
+  function clearSignature() {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (canvas && context) {
+      const { width, height } = canvas.getBoundingClientRect();
+      context.clearRect(0, 0, width, height);
+    }
+    drawing.current = false;
+    hasInk.current = false;
+    onChange(null);
+  }
+
+  return <div className="signature-field">
+    <div className="signature-field-heading"><strong>{label}</strong><button type="button" className="button button-ghost" onClick={clearSignature} disabled={!signature}>Hapus</button></div>
+    <canvas
+      ref={canvasRef}
+      className="signature-canvas"
+      aria-label={`Area tanda tangan ${label}`}
+      onPointerDown={startDrawing}
+      onPointerMove={draw}
+      onPointerUp={finishDrawing}
+      onPointerCancel={finishDrawing}
+    />
+    <small>{signature ? "Tanda tangan sudah dibubuhkan. Tekan Hapus untuk menggambar ulang." : "Tanda tangan langsung pada area ini menggunakan jari atau mouse."}</small>
+  </div>;
+}
+
+function CoordinatorSupervisionForm({ open, user, profile, rows, onOpen, onClose, onSaved }: { open: boolean; user: User; profile: UserProfile | null; rows: Hotspot[]; onOpen: () => void; onClose: () => void; onSaved: (submissionIds: string[], decision: SupervisionDecision, note: string, date: string) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [selectedEnumerator, setSelectedEnumerator] = useState("");
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>([]);
+  const [decision, setDecision] = useState<SupervisionDecision>("valid");
+  const [enumeratorSignature, setEnumeratorSignature] = useState<SupervisionSignature | null>(null);
+  const [coordinatorSignature, setCoordinatorSignature] = useState<SupervisionSignature | null>(null);
   const enumerators = Array.from(new Set(rows.map((row) => row.enumeratorName).filter(Boolean)));
-  const selectedRows = rows.filter((row) => row.enumeratorName === selectedEnumerator);
+  const enumeratorRows = rows.filter((row) => row.enumeratorName === selectedEnumerator);
+  const eligibleRows = enumeratorRows.filter((row) => canReviewWorkflowStage("coordinator", row.workflowStage));
+  const selectedRows = eligibleRows.filter((row) => selectedSubmissionIds.includes(row.id));
   const selectedOrganization = selectedRows.map((row) => normalizeOrganization(row.organisasi)).find(Boolean) || "";
   const selectedOrganizationLabel = organizationOptions.find(([value]) => value === selectedOrganization)?.[1] || "";
   const selectedLocations = Array.from(new Set(selectedRows.map((row) => row.area).filter(Boolean))).join(", ");
@@ -864,34 +1083,115 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
     if (!db) return setError("Sistem data belum siap.");
     setError("");
     const form = new FormData(event.currentTarget);
-    const organization = normalizeOrganization(String(form.get("komunitasOrganisasi") || ""));
-    if (!organization) return setError("Organisasi enumerator belum tercatat pada data pendataan.");
+    if (!selectedRows.length) return setError("Pilih minimal satu hotspot yang benar-benar diperiksa dalam sesi supervisi ini.");
+    if (selectedRows.length > 499) return setError("Sesi supervisi maksimal 499 hotspot. Bagi sesi menjadi beberapa form.");
+    const note = [
+      String(form.get("temuanSupervisi") || "").trim() && `Temuan: ${String(form.get("temuanSupervisi")).trim()}`,
+      String(form.get("kendalaLapangan") || "").trim() && `Kendala: ${String(form.get("kendalaLapangan")).trim()}`,
+      String(form.get("perbaikanYangDibutuhkan") || "").trim() && `Perbaikan: ${String(form.get("perbaikanYangDibutuhkan")).trim()}`,
+      String(form.get("tindakLanjut") || "").trim() && `Tindak lanjut: ${String(form.get("tindakLanjut")).trim()}`,
+    ].filter(Boolean).join("\n");
+    if (decision === "needs_revision" && !String(form.get("perbaikanYangDibutuhkan") || "").trim()) {
+      return setError("Isi perbaikan yang dibutuhkan sebelum mengembalikan data.");
+    }
+    if (!enumeratorSignature || !coordinatorSignature) {
+      return setError("Tanda tangan Enumerator dan Koordinator wajib dibubuhkan sebelum menyimpan supervisi.");
+    }
     setSaving(true);
-    const supervisedSubmissionIds = rows.filter((row) => row.enumeratorName === String(form.get("namaEnumerator") || "").trim()).map((row) => row.id);
     const checks = [...supervisionImplementationChecks, ...supervisionQualityChecks].reduce<Record<string, string>>((values, _, index) => {
       const section = index < supervisionImplementationChecks.length ? "pelaksanaan" : "kualitas";
       const number = index < supervisionImplementationChecks.length ? index + 1 : index - supervisionImplementationChecks.length + 1;
       values[`${section}_${number}`] = String(form.get(`${section}_${number}`) || "");
       return values;
     }, {});
+    const reviewedAt = new Date().toISOString();
+    const reviewDate = String(form.get("tanggalSupervisi") || "");
+    const workflowStage: WorkflowStage = decision === "valid"
+      ? "analyst_review"
+      : decision === "needs_revision" ? "needs_revision" : "coordinator_review";
+    const coordinatorReviewStatus: Hotspot["coordinatorReviewStatus"] = decision === "valid"
+      ? "Valid"
+      : decision === "needs_revision" ? "Perlu perbaikan" : "Pending";
+    const submissionIds = selectedRows.map((row) => row.id);
+    const supervisionRef = doc(collection(db, "supervisions"));
+    const batch = writeBatch(db);
     try {
-      await addDoc(collection(db, "supervisions"), {
+      const uploadSignature = async (signature: SupervisionSignature, signer: "enumerator" | "koordinator") => {
+        const response = await fetch("/api/documents/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: signature.dataUrl.split(",")[1],
+            fileName: `supervisi-${supervisionRef.id}-${signer}.png`,
+            fileMime: "image/png",
+            folderName: "Tanda Tangan Supervisi",
+            idempotencyKey: signature.idempotencyKey,
+          }),
+        });
+        const result = await response.json() as { success?: boolean; message?: string; fileId?: string; fileName?: string; fileUrl?: string };
+        if (!response.ok || !result.success || !result.fileId || !result.fileName || !result.fileUrl) {
+          throw new Error(result.message || `Tanda tangan ${signer} gagal diunggah.`);
+        }
+        return {
+          fileId: result.fileId,
+          fileName: result.fileName,
+          fileUrl: result.fileUrl,
+          signedAt: signature.signedAt,
+        };
+      };
+      const [enumeratorSignatureFile, coordinatorSignatureFile] = await Promise.all([
+        uploadSignature(enumeratorSignature, "enumerator"),
+        uploadSignature(coordinatorSignature, "koordinator"),
+      ]);
+      batch.set(supervisionRef, {
         checks,
-        kesimpulanSupervisi: form.getAll("kesimpulanSupervisi"),
-        komunitasOrganisasi: organization,
+        kesimpulanSupervisi: decision,
+        komunitasOrganisasi: selectedRows.map((row) => normalizeOrganization(row.organisasi)).find(Boolean) || "",
+        namaKoordinator: String(form.get("namaKoordinator") || "").trim(),
         pengesahanNamaEnumerator: String(form.get("pengesahanNamaEnumerator") || "").trim(),
-        pengesahanNamaSupervisor: String(form.get("pengesahanNamaSupervisor") || "").trim(),
+        pengesahanNamaKoordinator: String(form.get("pengesahanNamaKoordinator") || "").trim(),
         pengesahanTanggalEnumerator: String(form.get("pengesahanTanggalEnumerator") || ""),
-        pengesahanTanggalSupervisor: String(form.get("pengesahanTanggalSupervisor") || ""),
-        pengesahanTandaTanganEnumerator: String(form.get("pengesahanTandaTanganEnumerator") || "").trim(),
-        pengesahanTandaTanganSupervisor: String(form.get("pengesahanTandaTanganSupervisor") || "").trim(),
-        supervisorUid: user.uid,
-        submissionIds: supervisedSubmissionIds,
-        workflowStage: "supervisor_review",
-        workflowStatus: "submitted",
-        createdAt: new Date().toISOString(),
+        pengesahanTanggalKoordinator: String(form.get("pengesahanTanggalKoordinator") || ""),
+        pengesahanEnumeratorHadir: form.get("pengesahanEnumeratorHadir") === "on",
+        pengesahanTandaTanganEnumerator: enumeratorSignatureFile,
+        pengesahanTandaTanganKoordinator: { ...coordinatorSignatureFile, signerUid: user.uid },
+        coordinatorUid: user.uid,
+        submissionIds,
+        workflowStage: "coordinator_review",
+        workflowStatus: decision,
+        temuanSupervisi: String(form.get("temuanSupervisi") || "").trim(),
+        kendalaLapangan: String(form.get("kendalaLapangan") || "").trim(),
+        perbaikanYangDibutuhkan: String(form.get("perbaikanYangDibutuhkan") || "").trim(),
+        tindakLanjut: String(form.get("tindakLanjut") || "").trim(),
+        createdAt: reviewedAt,
       });
-      onSaved();
+      for (const submission of selectedRows) {
+        batch.update(doc(db, "submissions", submission.id), {
+          coordinatorReviewStatus,
+          coordinatorReviewNote: note,
+          coordinatorReviewKelengkapan: checks.kualitas_1,
+          coordinatorReviewDuplikasi: checks.kualitas_3,
+          coordinatorReviewKroscek: checks.kualitas_4,
+          coordinatorReviewerName: String(form.get("namaKoordinator") || "").trim(),
+          coordinatorReviewDate: reviewDate,
+          coordinatorReviewerUid: user.uid,
+          coordinatorReviewedAt: reviewedAt,
+          workflowStage,
+          workflowUpdatedByRole: profile?.role || "koordinator",
+          workflowHistory: arrayUnion({
+            stage: workflowStage,
+            role: profile?.role || "koordinator",
+            uid: user.uid,
+            actorName: profile?.nama || user.displayName || "",
+            at: reviewedAt,
+            note,
+          }),
+        });
+      }
+      await batch.commit();
+      setEnumeratorSignature(null);
+      setCoordinatorSignature(null);
+      onSaved(submissionIds, decision, note, reviewDate);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Supervisi gagal disimpan.");
     } finally {
@@ -899,8 +1199,61 @@ function SupervisorForm({ open, user, profile, rows, onOpen, onClose, onSaved }:
     }
   }
 
-  if (!open) return <button type="button" className="supervision-launch button button-ghost" onClick={onOpen} aria-label="Buka form supervisi">☑ <span>Form Supervisi</span></button>;
-  return <div className="user-modal-backdrop"><section className="user-modal supervision-modal" role="dialog" aria-modal="true" aria-labelledby="supervision-form-title"><div className="user-modal-header"><div><p className="eyebrow">Supervisi lapangan</p><h2 id="supervision-form-title">Format Supervisi Pemetaan Hotspot</h2><p>Kota Malang 2026 · Lengkapi pemeriksaan dan pengesahan supervisor.</p></div><button className="modal-close" onClick={onClose} aria-label="Tutup">×</button></div>{error && <p className="login-error user-modal-error">{error}</p>}<form className="supervision-form" onSubmit={submit}><p className="form-section-title">A. Identitas Supervisi</p><div className="supervision-grid"><label>Tanggal supervisi<input name="tanggalSupervisi" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><label>Lokasi / wilayah<input name="lokasiWilayah" value={selectedLocations} readOnly required /></label><label>Nama supervisor<input name="namaSupervisor" defaultValue={profile?.nama || user.email || ""} required /></label><label>Enumerator yang disupervisi<select name="namaEnumerator" value={selectedEnumerator} onChange={(event) => setSelectedEnumerator(event.target.value)} required><option value="">Pilih Enumerator</option>{enumerators.map((name) => <option key={name} value={name}>{name}</option>)}</select></label><label>Komunitas / organisasi<input value={selectedOrganizationLabel || "Organisasi belum tercatat"} readOnly /><input type="hidden" name="komunitasOrganisasi" value={selectedOrganization} /></label><label>Jumlah hotspot dipantau<input name="jumlahHotspot" type="number" min="0" value={selectedRows.length} readOnly /></label></div><SupervisionChecks title="B. Pemeriksaan Pelaksanaan Lapangan" name="pelaksanaan" items={supervisionImplementationChecks} /><SupervisionChecks title="C. Pemeriksaan Kualitas Data" name="kualitas" items={supervisionQualityChecks} /><p className="form-section-title">D. Hasil Supervisi</p><div className="supervision-text-grid"><label>Temuan supervisi<textarea name="temuanSupervisi" rows={2} /></label><label>Kendala lapangan<textarea name="kendalaLapangan" rows={2} /></label><label>Perbaikan yang dibutuhkan<textarea name="perbaikanYangDibutuhkan" rows={2} /></label><label>Tindak lanjut<textarea name="tindakLanjut" rows={2} /></label></div><p className="form-section-title">E. Kesimpulan Supervisi</p><div className="supervision-options"><label><input type="checkbox" name="kesimpulanSupervisi" value="pelaksanaan_sesuai_standar_dan_dapat_dilanjutkan" /> Pelaksanaan sesuai standar dan dapat dilanjutkan.</label><label><input type="checkbox" name="kesimpulanSupervisi" value="diperlukan_perbaikan_sebelum_proses_dilanjutkan" /> Diperlukan perbaikan sebelum proses dilanjutkan.</label><label><input type="checkbox" name="kesimpulanSupervisi" value="diperlukan_tindak_lanjut_khusus" /> Diperlukan tindak lanjut khusus.</label></div><p className="form-section-title">F. Pengesahan</p><div className="supervision-sign-grid"><div><strong>Enumerator</strong><label>Nama<input name="pengesahanNamaEnumerator" value={selectedEnumerator} readOnly /></label><label>Tanggal<input name="pengesahanTanggalEnumerator" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label>Tanda tangan<input name="pengesahanTandaTanganEnumerator" placeholder="Nama / tanda tangan" /></label></div><div><strong>Supervisor</strong><label>Nama<input name="pengesahanNamaSupervisor" defaultValue={profile?.nama || user.email || ""} readOnly /></label><label>Tanggal<input name="pengesahanTanggalSupervisor" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label>Tanda tangan<input name="pengesahanTandaTanganSupervisor" placeholder="Nama / tanda tangan" /></label></div></div><div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? "Menyimpan..." : "Simpan supervisi"}</button></div></form></section></div>;
+  if (!open) return <button type="button" className="supervision-launch button button-ghost" onClick={onOpen} aria-label="Buka form supervisi Koordinator">☑ <span>Form Supervisi</span></button>;
+  return (
+    <div className="user-modal-backdrop">
+      <section className="user-modal supervision-modal" role="dialog" aria-modal="true" aria-labelledby="supervision-form-title">
+        <div className="user-modal-header">
+          <div><p className="eyebrow">Supervisi lapangan oleh Koordinator Kegiatan</p><h2 id="supervision-form-title">Format Supervisi Pemetaan Hotspot</h2><p>Kota Malang 2026 · Satu sesi dapat mencakup beberapa hotspot yang benar-benar diperiksa.</p></div>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">×</button>
+        </div>
+        {error && <p className="login-error user-modal-error" role="alert">{error}</p>}
+        <form className="supervision-form" onSubmit={submit}>
+          <p className="form-section-title">A. Identitas Supervisi</p>
+          <div className="supervision-grid">
+            <label>Tanggal supervisi<input name="tanggalSupervisi" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
+            <label>Nama Koordinator<input name="namaKoordinator" defaultValue={profile?.nama || user.email || ""} required /></label>
+            <label>Enumerator yang disupervisi<select name="namaEnumerator" value={selectedEnumerator} onChange={(event) => { setSelectedEnumerator(event.target.value); setSelectedSubmissionIds([]); setEnumeratorSignature(null); setCoordinatorSignature(null); }} required><option value="">Pilih Enumerator</option>{enumerators.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
+            <label>Komunitas / organisasi<input value={selectedOrganizationLabel || "Pilih hotspot untuk melihat organisasi"} readOnly /></label>
+            <label>Wilayah hotspot terpilih<input value={selectedLocations} readOnly placeholder="Pilih hotspot yang diperiksa" /></label>
+            <label>Jumlah hotspot terpilih<input type="number" min="0" value={selectedRows.length} readOnly /></label>
+          </div>
+          <fieldset className="supervision-hotspot-select">
+            <legend>Hotspot yang benar-benar diperiksa dalam sesi ini</legend>
+            {!selectedEnumerator ? <p>Pilih enumerator untuk menampilkan data yang dapat disupervisi.</p> : eligibleRows.length ? eligibleRows.map((row) => (
+              <label key={row.id}>
+                <input type="checkbox" checked={selectedSubmissionIds.includes(row.id)} onChange={(event) => { setSelectedSubmissionIds((ids) => event.target.checked ? [...ids, row.id] : ids.filter((id) => id !== row.id)); setEnumeratorSignature(null); setCoordinatorSignature(null); }} />
+                <span><strong>{row.name}</strong><small>{row.id} · {row.area} · {row.workflowStage === "needs_revision" ? "Perlu tindak lanjut" : "Menunggu supervisi Koordinator"}</small></span>
+              </label>
+            )) : <p>Tidak ada hotspot enumerator ini pada antrean supervisi.</p>}
+            <small>Hanya data yang dipilih di atas yang akan menerima hasil supervisi. Daftar ini mencakup data yang sedang dimuat pada dashboard.</small>
+          </fieldset>
+          <SupervisionChecks title="B. Pemeriksaan Pelaksanaan Lapangan" name="pelaksanaan" items={supervisionImplementationChecks} />
+          <SupervisionChecks title="C. Pemeriksaan Kualitas Data" name="kualitas" items={supervisionQualityChecks} />
+          <p className="form-section-title">D. Hasil Supervisi</p>
+          <div className="supervision-text-grid">
+            <label>Temuan supervisi<textarea name="temuanSupervisi" rows={2} /></label>
+            <label>Kendala lapangan<textarea name="kendalaLapangan" rows={2} /></label>
+            <label>Perbaikan yang dibutuhkan<textarea name="perbaikanYangDibutuhkan" rows={2} required={decision === "needs_revision"} /></label>
+            <label>Tindak lanjut<textarea name="tindakLanjut" rows={2} /></label>
+          </div>
+          <p className="form-section-title">E. Kesimpulan Supervisi untuk data terpilih</p>
+          <div className="supervision-options">
+            <label><input type="radio" name="kesimpulanSupervisi" value="valid" checked={decision === "valid"} onChange={() => setDecision("valid")} /> Lolos supervisi, teruskan ke Data Analis.</label>
+            <label><input type="radio" name="kesimpulanSupervisi" value="pending" checked={decision === "pending"} onChange={() => setDecision("pending")} /> Perlu tindak lanjut Koordinator sebelum diteruskan.</label>
+            <label><input type="radio" name="kesimpulanSupervisi" value="needs_revision" checked={decision === "needs_revision"} onChange={() => setDecision("needs_revision")} /> Perlu perbaikan oleh enumerator.</label>
+          </div>
+          <p className="form-section-title">F. Pengesahan</p>
+          <div className="supervision-sign-grid">
+            <div><strong>Enumerator</strong><label>Nama<input name="pengesahanNamaEnumerator" value={selectedEnumerator} readOnly /></label><label>Tanggal<input name="pengesahanTanggalEnumerator" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><SupervisionSignatureCanvas label="Tanda tangan Enumerator" signature={enumeratorSignature} onChange={setEnumeratorSignature} /></div>
+            <div><strong>Koordinator</strong><label>Nama<input name="pengesahanNamaKoordinator" defaultValue={profile?.nama || user.email || ""} readOnly /></label><label>Tanggal<input name="pengesahanTanggalKoordinator" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><SupervisionSignatureCanvas label="Tanda tangan Koordinator" signature={coordinatorSignature} onChange={setCoordinatorSignature} /></div>
+          </div>
+          <label className="signature-attendance"><input name="pengesahanEnumeratorHadir" type="checkbox" required /> Saya mengonfirmasi Enumerator hadir dan membubuhkan tanda tangan pada perangkat ini.</label>
+          <div className="user-modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary" disabled={saving || selectedRows.length === 0}>{saving ? "Menyimpan..." : `Simpan supervisi untuk ${selectedRows.length} hotspot`}</button></div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function SupervisionChecks({ title, name, items }: { title: string; name: string; items: string[] }) {

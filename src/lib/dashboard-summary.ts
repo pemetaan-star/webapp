@@ -1,6 +1,5 @@
 export const workflowStages = [
   "submitted",
-  "supervisor_review",
   "coordinator_review",
   "analyst_review",
   "finalized",
@@ -8,6 +7,24 @@ export const workflowStages = [
 ] as const;
 
 export type WorkflowStage = (typeof workflowStages)[number];
+
+export function normalizeWorkflowStage(value: unknown): WorkflowStage {
+  const stage = String(value || "submitted");
+  if (stage === "supervisor_review") return "coordinator_review";
+  return workflowStages.includes(stage as WorkflowStage) ? stage as WorkflowStage : "submitted";
+}
+
+export function canReviewWorkflowStage(
+  role: "admin" | "coordinator" | "analyst" | "other",
+  stage: WorkflowStage,
+) {
+  if (role === "admin") return stage !== "finalized";
+  if (role === "coordinator") {
+    return ["submitted", "coordinator_review", "needs_revision"].includes(stage);
+  }
+  if (role === "analyst") return stage === "analyst_review";
+  return false;
+}
 
 export type EnumeratorProgressSummary = {
   id: string;

@@ -36,7 +36,7 @@ statusHotspot, statusVerifikasi, populasiKunci, tipeLokasi, subTipeLokasi
 catatan, document, qcStatus, workflowStage, createdAt
 ```
 
-Tahapan `workflowStage` submission: `submitted`, `supervisor_review`, `coordinator_review`, `analyst_review`, `finalized`, atau `needs_revision`. Data supervisi memakai `supervisor_review` dan `workflowStatus: submitted` saat pertama disimpan.
+Tahapan `workflowStage` submission mengikuti proposal: `submitted` (menunggu supervisi Koordinator), `coordinator_review`, `analyst_review`, `finalized`, atau `needs_revision`. Supervisi dilakukan Koordinator Kegiatan; Data Analis menangani pemeriksaan, pengolahan, dan analisis setelah supervisi. Satu formulir supervisi dapat mencakup beberapa hotspot yang dipilih secara eksplisit; penyimpanan form dan perpindahan tahap submission terpilih dilakukan secara atomik. Tahap lama `supervisor_review` dinormalisasi sebagai `coordinator_review` saat ditampilkan. Dokumen supervisi baru disimpan dengan `coordinatorUid` dan tahap `coordinator_review`; akun role `supervisor` lama harus dialihkan oleh Admin menjadi `koordinator`.
 
 ## Getting Started
 
@@ -110,7 +110,6 @@ service cloud.firestore {
       return signedIn() && (
         myProfile().role == 'admin' ||
         myProfile().role == 'koordinator' ||
-        myProfile().role == 'supervisor' ||
         myProfile().role == 'data analis' ||
         myProfile().role == 'data analyst'
       );
@@ -139,11 +138,15 @@ service cloud.firestore {
     }
 
     match /supervisions/{supervisionId} {
-      allow create: if isReviewer()
-        && request.resource.data.supervisorUid == request.auth.uid;
+      allow create: if signedIn()
+        && (myProfile().role == 'admin' || myProfile().role == 'koordinator')
+        && request.resource.data.coordinatorUid == request.auth.uid;
 
       allow read: if isReviewer()
-        || (signedIn() && resource.data.supervisorUid == request.auth.uid);
+        || (signedIn() && (
+          resource.data.coordinatorUid == request.auth.uid ||
+          resource.data.supervisorUid == request.auth.uid
+        ));
 
       allow update, delete: if isAdmin();
     }

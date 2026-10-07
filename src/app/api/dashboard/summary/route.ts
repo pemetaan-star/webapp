@@ -1,11 +1,10 @@
 import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 import type { Query, QueryDocumentSnapshot } from "firebase-admin/firestore";
-import { workflowStages, type DashboardSummary, type EnumeratorProgressSummary, type WorkflowStage } from "@/lib/dashboard-summary";
+import { normalizeWorkflowStage, type DashboardSummary, type EnumeratorProgressSummary, type WorkflowStage } from "@/lib/dashboard-summary";
 
 const PAGE_SIZE = 500;
 const emptyStages = (): Record<WorkflowStage, number> => ({
   submitted: 0,
-  supervisor_review: 0,
   coordinator_review: 0,
   analyst_review: 0,
   finalized: 0,
@@ -80,8 +79,7 @@ export async function GET(request: Request) {
           stages: emptyStages(),
         };
         const qcStatus = String(data.qcStatus || "pending").toLowerCase();
-        const stageValue = String(data.workflowStage || "submitted") as WorkflowStage;
-        const stage = workflowStages.includes(stageValue) ? stageValue : "submitted";
+        const stage = normalizeWorkflowStage(data.workflowStage);
 
         summary.total += 1;
         if (data.statusHotspot === "aktif" || data.statusHotspot === "baru") summary.active += 1;

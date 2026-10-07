@@ -151,6 +151,9 @@ function getUploadTargetFolder(parentFolder, payload) {
   if (requestedFolder === 'Persetujuan QC') {
     return getOrCreateFolder(parentFolder, requestedFolder);
   }
+  if (requestedFolder === 'Tanda Tangan Supervisi') {
+    return getOrCreateFolder(parentFolder, requestedFolder);
+  }
 
   const enumeratorName = sanitizeFolderName(payload.enumeratorName);
   const hotspotCode = sanitizeFolderName(payload.hotspotCode);
