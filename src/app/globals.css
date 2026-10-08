@@ -212,13 +212,9 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 	.reviewer-dashboard .table-toolbar .panel-heading h2 { font-size: .84rem; }
 	.reviewer-dashboard .table-toolbar .panel-heading p { font-size: .66rem; }
 	.reviewer-dashboard .table-controls { display: grid; grid-template-columns: 1fr 112px; gap: 6px; }
-	.reviewer-dashboard .table-panel table { min-width: 0; table-layout: fixed; }
+	.reviewer-dashboard .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+	.reviewer-dashboard .table-panel table { min-width: 850px; table-layout: auto; }
 	.reviewer-dashboard .table-panel th, .reviewer-dashboard .table-panel td { padding: 10px 6px; }
-	.reviewer-dashboard .table-panel th:nth-child(1), .reviewer-dashboard .table-panel td:nth-child(1), .reviewer-dashboard .table-panel th:nth-child(2), .reviewer-dashboard .table-panel td:nth-child(2), .reviewer-dashboard .table-panel th:nth-child(4), .reviewer-dashboard .table-panel td:nth-child(4), .reviewer-dashboard .table-panel th:nth-child(5), .reviewer-dashboard .table-panel td:nth-child(5), .reviewer-dashboard .table-panel th:nth-child(6), .reviewer-dashboard .table-panel td:nth-child(6) { display: none; }
-	.reviewer-dashboard .table-panel th:nth-child(3), .reviewer-dashboard .table-panel td:nth-child(3) { width: 52%; }
-	.reviewer-dashboard .table-panel th:nth-child(7), .reviewer-dashboard .table-panel td:nth-child(7) { width: 34%; }
-	.reviewer-dashboard .table-panel th:nth-child(8), .reviewer-dashboard .table-panel td:nth-child(8) { width: 14%; text-align: center; }
-	.reviewer-dashboard .table-panel td:nth-child(3) strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.reviewer-dashboard .table-footer .button-link { display: none; }
 }
 

@@ -978,9 +978,9 @@ function SubmissionTable({
       </div>
     </div>
     <div className="table-wrap"><table>
-      <thead><tr><th>ID DATA</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>TAHAP WORKFLOW</th><th>AKSI</th></tr></thead>
+      <thead><tr><th>NAMA ENUMERATOR</th><th>TANGGAL</th><th>NAMA HOTSPOT</th><th>WILAYAH</th><th>POPULASI KUNCI</th><th>STATUS HOTSPOT</th><th>TAHAP WORKFLOW</th><th>AKSI</th></tr></thead>
       <tbody>{rows.map((hotspot) => <tr key={hotspot.id}>
-        <td className="mono">{hotspot.id}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td>
+        <td>{hotspot.enumeratorName || "Nama belum diatur"}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td>
         <td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td>
         <td><span className="workflow-badge">{workflowStageLabels[hotspot.workflowStage]}</span></td>
         <td><button className="row-action" onClick={() => onView(hotspot)} aria-label={`Lihat detail ${hotspot.name}`}>→</button>
