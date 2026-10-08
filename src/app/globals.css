@@ -8,6 +8,7 @@
 .enumerator-form textarea { display: block; width: 100%; min-height: 74px; resize: vertical; margin-top: 7px; padding: 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); outline: none; }
 .enumerator-form textarea:focus { border-color: var(--teal); box-shadow: 0 0 0 3px #0f9f941f; }
 .form-wide { grid-column: 1 / -1; }
+.visit-note { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
 .form-section-title { margin: 6px 0 -2px; padding-bottom: 8px; border-bottom: 1px solid var(--line); color: var(--teal); font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .dashboard-content > .visual-grid, .dashboard-content > .risk-panel { display: none; }
 .real-overview { display: grid; gap: 16px; margin-bottom: 16px; }.real-overview-grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 16px; }.real-overview .map-area { min-height: 350px; }.real-empty { display: grid; min-height: 100%; place-items: center; padding: 20px; color: var(--muted); font-size: .75rem; text-align: center; }.real-bars { display: grid; gap: 14px; padding: 10px 0; }.real-bar-row > div { display: flex; justify-content: space-between; color: var(--muted); font-size: .72rem; }.real-bar-row strong { color: var(--ink); }.real-bar { display: block; height: 8px; margin-top: 6px; border-radius: 20px; background: var(--teal); }.real-bar-1 { background: #3e83df; }.real-bar-2 { background: #e5ad44; }.real-bar-3 { background: var(--coral); }.real-risk-panel { margin-bottom: 0; }
