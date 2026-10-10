@@ -1959,20 +1959,44 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
 
 const MAX_UPLOAD_FILE_BYTES = 2_000_000;
 
-function toBase64(file: File) {
-  return file.arrayBuffer()
-    .then((buffer) => {
-      const bytes = new Uint8Array(buffer);
-      const chunkSize = 0x8000;
-      let binary = "";
-      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+function readFileWithFileReader(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+      else reject(new Error("Pembacaan file tidak menghasilkan data biner."));
+    };
+    reader.onerror = () => reject(reader.error || new Error("Pembacaan file gagal."));
+    reader.onabort = () => reject(new Error("Pembacaan file dibatalkan."));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function toBase64(file: File) {
+  let buffer: ArrayBuffer;
+  try {
+    if (typeof file.arrayBuffer === "function") {
+      try {
+        buffer = await file.arrayBuffer();
+        if (buffer.byteLength !== file.size) throw new Error("Ukuran hasil baca file tidak sesuai.");
+      } catch {
+        buffer = await readFileWithFileReader(file);
       }
-      return btoa(binary);
-    })
-    .catch(() => {
-      throw new Error(`Browser tidak dapat membaca file "${file.name}". Pilih ulang file dari perangkat atau ambil foto kembali.`);
-    });
+    } else {
+      buffer = await readFileWithFileReader(file);
+    }
+    if (buffer.byteLength !== file.size) throw new Error("Ukuran hasil baca file tidak sesuai.");
+  } catch {
+    throw new Error(`Browser gagal membaca foto "${file.name}" meskipun sudah mencoba metode alternatif. Coba pilih foto lagi dari Galeri atau ambil ulang dengan kamera.`);
+  }
+
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 async function prepareImageForUpload(file: File): Promise<File> {
