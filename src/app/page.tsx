@@ -831,7 +831,7 @@ export default function Home() {
   return (
     <div className={`dashboard-page ${isReviewer ? "can-review" : "read-only"} ${isEnumerator ? "enumerator-dashboard" : "reviewer-dashboard"}`}>
       {dataLoading && authUser && userProfile && <DashboardLoading />}
-      <nav className="topbar"><div className="brand"><span className="brand-mark"><NextImage src="/lingga-indonesia-icon.svg" alt="Lingga Indonesia" width={30} height={30} loading="eager" /></span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{displayRole(userProfile?.role)}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
+      <nav className="topbar"><div className="brand"><span className="brand-mark"><NextImage src="/icons/lingga-512.png" alt="Lingga Indonesia" width={30} height={30} loading="eager" /></span><span>Pemetaan Hotspot<br /><small>Kota Malang 2026</small></span></div><div className="topbar-actions"><span className="user-chip"><span className="avatar">{(userProfile?.nama?.[0] || authUser?.email?.[0] || "A").toUpperCase()}</span><span><strong>{userProfile?.nama || authUser?.email || "Pengguna"}</strong><small>{displayRole(userProfile?.role)}</small></span></span>{userProfile?.role?.toLowerCase() === "admin" && <button className="button button-ghost" onClick={openUserManagement}>♙ <span>Manajemen User</span></button>}{isEnumerator && <button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>＋ <span>Input Data</span></button>}<button className="icon-button" onClick={handleLogout} aria-label="Keluar">↪</button></div></nav>
       <main className="dashboard-content">
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Pemantauan & Pemeriksaan Kualitas"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Pembaruan data <strong>{lastUpdated}</strong></div></section>
         {isLegacySupervisor && <p className="dashboard-summary-error" role="status">Role Supervisor tidak digunakan dalam proposal kegiatan. Hubungi Admin untuk mengubah role akun menjadi Koordinator Kegiatan.</p>}
@@ -2249,4 +2249,57 @@ function LoginScreen({ onLogin, loginError, setLoginError }: { onLogin: (user: U
     }
   }
 
-  return <main className="login-page"><div className="login-layout"><section className="login-intro"><div className="login-brand-mark">+</div><p className="eyebrow login-eyebrow">Platform Pemetaan Data</p><h1>Pemetaan Hotspot Malang</h1><p className="login-description">Kelola data lapangan, pantau persebaran, dan pastikan setiap pendataan melalui pemeriksaan kualitas yang terukur.</p><div className="login-features"><div><span>✓</span>Pemantauan data terpusat</div><div><span>✓</span>Pemeriksaan kualitas data</div><div><span>✓</span>Pembaruan data lapangan</div></div><div className="login-orbit login-orbit-one" /><div className="login-orbit login-orbit-two" /></section><section className="login-form"><p className="eyebrow">Akses pengguna</p><h2>Masuk ke dashboard</h2><p className="login-form-copy">Gunakan username dan sandi yang terdaftar untuk melanjutkan.</p><form onSubmit={submitLogin}><label htmlFor="username">Username</label><div className="login-input"><span>◉</span><input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Masukkan username" /></div><label htmlFor="password">Sandi</label><div className="login-input"><span>▣</span><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Masukkan sandi" /></div>{loginError && <p className="login-error" role="alert">{loginError}</p>}<button className="login-submit" type="submit">Masuk ke dashboard <span>→</span></button></form><p className="login-footer">Lingga Indonesia <span>•</span> Pemetaan Kota Malang 2026</p></section></div></main>;}
+  return <main className="login-page">
+    <div className="login-layout">
+      <section className="login-intro" aria-label="Tentang Pemetaan Hotspot Malang">
+        <div className="login-brand-lockup">
+          <span className="login-brand-mark"><NextImage src="/icons/lingga-512.png" alt="Lingga Indonesia" width={58} height={58} priority /></span>
+          <span><strong>Lingga Indonesia</strong><small>Platform pemetaan data</small></span>
+        </div>
+        <div className="login-intro-copy">
+          <span className="login-kicker"><i /> KOTA MALANG · 2026</span>
+          <h1>Pemetaan yang lebih terarah.</h1>
+          <p>Kelola data lapangan, pantau persebaran, dan pastikan setiap pendataan melalui pemeriksaan kualitas yang terukur.</p>
+        </div>
+        <div className="login-map-card" aria-hidden="true">
+          <div className="login-map-grid" />
+          <span className="login-map-label login-map-label-one">KOTA MALANG</span>
+          <span className="login-map-label login-map-label-two">PEMETAAN LAPANGAN</span>
+          <span className="login-map-pin login-map-pin-one" />
+          <span className="login-map-pin login-map-pin-two" />
+          <span className="login-map-pin login-map-pin-three" />
+          <span className="login-map-ring login-map-ring-one" />
+          <span className="login-map-ring login-map-ring-two" />
+          <div className="login-map-caption"><span className="login-map-caption-icon">⌖</span><span><strong>Monitoring terpusat</strong><small>Data lapangan dalam satu alur</small></span><span className="login-map-caption-status" /></div>
+        </div>
+        <div className="login-features">
+          <div><span>✓</span>Pemantauan data terpusat</div>
+          <div><span>✓</span>Pemeriksaan kualitas data</div>
+          <div><span>✓</span>Pembaruan data lapangan</div>
+        </div>
+        <div className="login-orbit login-orbit-one" />
+        <div className="login-orbit login-orbit-two" />
+      </section>
+      <section className="login-form">
+        <div className="login-secure-badge"><span aria-hidden="true">✓</span> AKSES PENGGUNA TERLINDUNGI</div>
+        <p className="eyebrow">Selamat datang kembali</p>
+        <h2>Masuk ke akun Anda</h2>
+        <p className="login-form-copy">Gunakan username dan sandi yang terdaftar untuk melanjutkan ke dashboard.</p>
+        <form onSubmit={submitLogin}>
+          <label htmlFor="username">Username</label>
+          <div className="login-input">
+            <span aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.7-3.2 3-5 7-5s6.3 1.8 7 5" /></svg></span>
+            <input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="Masukkan username" />
+          </div>
+          <label htmlFor="password">Kata sandi</label>
+          <div className="login-input">
+            <span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></span>
+            <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Masukkan kata sandi" />
+          </div>
+          {loginError && <p className="login-error" role="alert">{loginError}</p>}
+          <button className="login-submit" type="submit"><span>Masuk ke dashboard</span><span className="login-submit-arrow" aria-hidden="true">→</span></button>
+        </form>
+        <p className="login-footer"><span className="login-footer-mark">L</span><span>Lingga Indonesia<small>Pemetaan Kota Malang 2026</small></span><span className="login-footer-dot" /><span className="login-footer-secure">Data Anda terlindungi</span></p>
+      </section>
+    </div>
+  </main>;}
