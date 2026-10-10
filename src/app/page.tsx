@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { Kpi, PanelHeading } from "@/app/components/dashboard";
+import { EnumeratorAiAssistant } from "@/app/components/enumerator-ai-assistant";
 import { EnumeratorFormFields, normalizeOrganization, organizationOptions } from "@/app/components/enumerator-form";
 import { DashboardOverview } from "@/app/components/dashboard-overview";
 import { DashboardAnalytics } from "@/app/components/dashboard-analytics";
@@ -963,6 +964,7 @@ export default function Home() {
           />
               </div>}
       </main>
+      {isEnumerator && authUser && !showEnumeratorForm && <EnumeratorAiAssistant user={authUser} />}
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}
       {showEnumeratorForm && authUser && <EnumeratorForm key={revisionSubmission?.id || "new"} user={authUser} profile={userProfile} existingHotspots={hotspotRows} revision={revisionSubmission} onClose={() => { setShowEnumeratorForm(false); setRevisionSubmission(null); }} onSaved={() => { setShowEnumeratorForm(false); setRevisionSubmission(null); setLastUpdated("sekarang"); void refreshDashboardSummary(authUser, userProfile); }} />}
       {canSupervise && authUser && <CoordinatorSupervisionForm key={initialSupervisionSubmissionId || "default"} open={showSupervisionForm} initialSubmissionId={initialSupervisionSubmissionId} user={authUser} profile={userProfile} rows={hotspotRows} pendingSubmissionIds={pendingSupervisionSubmissionIds} onClose={() => { setInitialSupervisionSubmissionId(null); setShowSupervisionForm(false); }} onSaved={() => {
