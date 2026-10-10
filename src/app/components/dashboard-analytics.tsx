@@ -44,14 +44,30 @@ function summarize(rows: AnalyticsRow[], getCategory: (row: AnalyticsRow) => str
   return [...counts.entries()].sort((first, second) => second[1] - first[1]);
 }
 
-function DistributionPanel({ title, subtitle, icon, items, total }: { title: string; subtitle: string; icon: string; items: Array<[string, number]>; total: number }) {
-  const max = Math.max(1, ...items.map(([, count]) => count));
+const chartColors = ["#0b8f83", "#3e83df", "#e5ad44", "#e16c5b", "#8064c8", "#75869a"];
+
+function DistributionPanel({ title, subtitle, icon, items }: { title: string; subtitle: string; icon: string; items: Array<[string, number]> }) {
+  const chartItems = items.slice(0, 5);
+  const remaining = items.slice(5).reduce((sum, [, count]) => sum + count, 0);
+  if (remaining) chartItems.push(["Lainnya", remaining]);
+  const total = chartItems.reduce((sum, [, count]) => sum + count, 0);
+  const slices = chartItems.map(([, count], index) => {
+    const start = chartItems.slice(0, index).reduce((sum, [, previousCount]) => sum + previousCount, 0);
+    const end = start + count;
+    return `${chartColors[index % chartColors.length]} ${(start / total) * 100}% ${(end / total) * 100}%`;
+  });
+
   return <article className="panel analytics-panel">
     <PanelHeading icon={icon} title={title} subtitle={subtitle} />
-    {items.length ? <div className="analytics-bars">{items.slice(0, 6).map(([label, count], index) => <div className="analytics-bar-row" key={label}>
-      <div><span>{label}</span><strong>{count}<small>{total ? ` · ${Math.round((count / total) * 100)}%` : ""}</small></strong></div>
-      <i className={`analytics-bar analytics-bar-${index % 4}`} style={{ width: `${Math.max(4, (count / max) * 100)}%` }} />
-    </div>)}</div> : <p className="analytics-empty">Belum ada data untuk ditampilkan.</p>}
+    {total ? <div className="analytics-chart">
+      <div className="analytics-donut" role="img" aria-label={`${total} data kategori`} style={{ background: `conic-gradient(${slices.join(", ")})` }}>
+        <span><strong>{total.toLocaleString("id-ID")}</strong><small>data kategori</small></span>
+      </div>
+      <ul className="analytics-legend">{chartItems.map(([label, count], index) => <li key={label}>
+        <span className="analytics-legend-label"><i style={{ backgroundColor: chartColors[index % chartColors.length] }} /><span>{label}</span></span>
+        <strong>{count.toLocaleString("id-ID")} <small>{Math.round((count / total) * 100)}%</small></strong>
+      </li>)}</ul>
+    </div> : <p className="analytics-empty">Belum ada data untuk ditampilkan.</p>}
   </article>;
 }
 
@@ -68,11 +84,11 @@ export function DashboardAnalytics({ rows, canLoadMore, onLoadMore }: { rows: An
       <span className="analytics-scope">{rows.length} data dimuat</span>
     </div>
     <div className="analytics-grid">
-      <DistributionPanel icon="◉" title="Status hotspot" subtitle="Komposisi status pendataan" items={statusItems} total={rows.length} />
-      <DistributionPanel icon="✓" title="Kualitas data" subtitle="Status pemeriksaan kualitas" items={qcItems} total={rows.length} />
-      <DistributionPanel icon="⌖" title="Sebaran wilayah" subtitle="Jumlah data per kecamatan" items={areas} total={rows.length} />
-      <DistributionPanel icon="◎" title="Populasi kunci" subtitle="Kategori yang tercatat pada data" items={populations} total={rows.length} />
-      <DistributionPanel icon="▦" title="Tipe lokasi" subtitle="Lokasi hotspot yang dipetakan" items={locations} total={rows.length} />
+      <DistributionPanel icon="◉" title="Status hotspot" subtitle="Komposisi status pendataan" items={statusItems} />
+      <DistributionPanel icon="✓" title="Kualitas data" subtitle="Status pemeriksaan kualitas" items={qcItems} />
+      <DistributionPanel icon="⌖" title="Sebaran wilayah" subtitle="Jumlah data per kecamatan" items={areas} />
+      <DistributionPanel icon="◎" title="Populasi kunci" subtitle="Kategori yang tercatat pada data" items={populations} />
+      <DistributionPanel icon="▦" title="Tipe lokasi" subtitle="Lokasi hotspot yang dipetakan" items={locations} />
     </div>
     {canLoadMore && <div className="analytics-load-more"><p>Analitik menggunakan data yang sudah dimuat. Muat halaman data berikutnya untuk memperluas cakupan.</p><button type="button" className="button button-secondary" onClick={onLoadMore}>Muat data berikutnya</button></div>}
   </section>;
