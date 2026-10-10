@@ -40,6 +40,27 @@ service cloud.firestore {
         && data.jumlahDiedukasi is int && data.jumlahDiedukasi >= 0;
     }
 
+    function validEnumeratorRevision(data) {
+      return data.namaHotspot is string && data.namaHotspot.size() > 0
+        && data.kecamatan is string && data.kelurahan is string
+        && data.alamat is string
+        && validCoordinates(data.koordinat)
+        && data.statusHotspot in ['aktif', 'baru', 'tidak_aktif', 'perlu_verifikasi']
+        && data.statusVerifikasi is string
+        && data.populasiKunci is list
+        && data.tipeLokasi is string && data.subTipeLokasi is string
+        && data.waktuAktivitas is list
+        && validCounts(data)
+        && data.catatan is string && data.sumberInformasi is string
+        && data.noHpInforman is string && data.keteranganAktivitas is string
+        && data.kondisiSaatPemetaan is string
+        && data.document is map && data.documents is list
+        && data.workflowStage == 'coordinator_review'
+        && data.workflowUpdatedByRole == 'enumerator'
+        && data.workflowHistory is list
+        && data.coordinatorReviewStatus == 'Pending';
+    }
+
     function validSubmission(data) {
       return data.keys().hasAll([
           'enumeratorUid', 'kodeHotspot', 'organisasi', 'namaHotspot',
@@ -94,6 +115,21 @@ service cloud.firestore {
             'coordinatorReviewStatus', 'coordinatorReviewNote', 'coordinatorReviewKelengkapan',
             'coordinatorReviewDuplikasi', 'coordinatorReviewKroscek', 'coordinatorReviewerUid',
             'coordinatorReviewedAt', 'coordinatorReviewerName', 'coordinatorReviewDate',
+            'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
+          ]))
+        || (isEnumerator()
+          && request.resource.data.enumeratorUid == request.auth.uid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && resource.data.workflowStage == 'needs_revision'
+          && request.resource.data.workflowStage == 'coordinator_review'
+          && validEnumeratorRevision(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'namaHotspot', 'kecamatan', 'kelurahan', 'alamat', 'koordinat',
+            'statusHotspot', 'statusVerifikasi', 'populasiKunci', 'tipeLokasi',
+            'subTipeLokasi', 'tipeLokasiLainnya', 'waktuAktivitas',
+            'estimasiJumlahPopulasi', 'jumlahDiedukasi', 'catatan',
+            'sumberInformasi', 'noHpInforman', 'keteranganAktivitas',
+            'kondisiSaatPemetaan', 'document', 'documents', 'coordinatorReviewStatus',
             'workflowStage', 'workflowUpdatedByRole', 'workflowHistory'
           ]))
         || (isEnumerator()

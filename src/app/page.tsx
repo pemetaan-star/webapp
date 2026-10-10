@@ -21,6 +21,7 @@ type Hotspot = {
   area: string;
   population: string;
   status: "Aktif" | "Baru" | "Tidak aktif" | "Perlu verifikasi";
+  statusHotspotValue?: string;
   qc: "Valid" | "Pending" | "Perlu perbaikan";
   workflowStage: WorkflowStage;
   workflowHistory?: Array<{ stage: WorkflowStage; role: string; uid: string; actorName?: string; at: string; note?: string }>;
@@ -38,12 +39,16 @@ type Hotspot = {
   locationType?: string;
   locationSubtype?: string;
   activityTime?: string;
+  activityTimes?: string[];
+  populasiKunci?: string[];
   populationEstimate?: number;
   educated?: number;
   hivPositive?: number;
   hivTests?: number;
   notes?: string;
   informationSource?: string;
+  informationSourceValue?: string;
+  locationSubtypeOther?: string;
   informantPhone?: string;
   activityDescription?: string;
   mappingCondition?: string;
@@ -175,7 +180,9 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       name: String(data.namaHotspot || "Tanpa nama"),
       area: `${String(data.kecamatan || "-")} / ${String(data.kelurahan || "-")}`,
       population: Array.isArray(data.populasiKunci) ? data.populasiKunci.join(", ") : String(data.populasiKunci || "-"),
+      populasiKunci: Array.isArray(data.populasiKunci) ? data.populasiKunci.filter((value): value is string => typeof value === "string") : String(data.populasiKunci || "").split(",").map((value) => value.trim()).filter(Boolean),
       status: status === "baru" ? "Baru" : status === "tidak_aktif" ? "Tidak aktif" : status === "perlu_verifikasi" || status === "perlu_klarifikasi" ? "Perlu verifikasi" : "Aktif",
+      statusHotspotValue: String(data.statusHotspot || ""),
       qc: qc === "valid" ? "Valid" : qc === "perlu_perbaikan" ? "Perlu perbaikan" : "Pending",
       workflowStage: workflowStageLabels[workflowStage] ? workflowStage : "submitted",
       coordinatorReviewStatus: data.coordinatorReviewStatus === "Valid" || data.coordinatorReviewStatus === "Perlu perbaikan" ? data.coordinatorReviewStatus : data.coordinatorReviewStatus === "Pending" ? "Pending" : undefined,
@@ -200,12 +207,15 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       locationType: String(data.tipeLokasi || ""),
       locationSubtype: String(data.subTipeLokasi || ""),
       activityTime: Array.isArray(data.waktuAktivitas) ? data.waktuAktivitas.join(", ") : String(data.waktuAktivitas || ""),
+      activityTimes: Array.isArray(data.waktuAktivitas) ? data.waktuAktivitas.filter((value): value is string => typeof value === "string") : String(data.waktuAktivitas || "").split(",").map((value) => value.trim()).filter(Boolean),
       populationEstimate: Number(data.estimasiJumlahPopulasi || 0),
       educated: Number(data.jumlahDiedukasi || 0),
       hivPositive: Number(data.jumlahHivPositif || 0),
       hivTests: Number(data.jumlahTesHiv || 0),
       notes: String(data.catatan || ""),
       informationSource: String(data.sumberInformasi || ""),
+      informationSourceValue: String(data.sumberInformasi || ""),
+      locationSubtypeOther: String(data.tipeLokasiLainnya || ""),
       informantPhone: String(data.noHpInforman || ""),
       activityDescription: String(data.keteranganAktivitas || ""),
       mappingCondition: String(data.kondisiSaatPemetaan || ""),
@@ -281,9 +291,11 @@ export default function Home() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
   const [showEnumeratorForm, setShowEnumeratorForm] = useState(false);
+  const [revisionSubmission, setRevisionSubmission] = useState<Hotspot | null>(null);
   const [showSupervisionForm, setShowSupervisionForm] = useState(false);
+  const [initialSupervisionSubmissionId, setInitialSupervisionSubmissionId] = useState<string | null>(null);
   const [completingSupervisionId, setCompletingSupervisionId] = useState<string | null>(null);
-  const [activeDashboardTab, setActiveDashboardTab] = useState<"data" | "progress" | "analytics">("data");
+  const [activeDashboardTab, setActiveDashboardTab] = useState<"data" | "progress" | "analytics" | "supervision">("data");
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
   const [selectedSignatureSession, setSelectedSignatureSession] = useState<SupervisionSession | null>(null);
   const [showQcModal, setShowQcModal] = useState(false);
@@ -321,6 +333,12 @@ export default function Home() {
     const matchesQuery = Object.values(hotspot).join(" ").toLowerCase().includes(searchQuery.toLowerCase());
     return matchesQuery && (filter === "Semua" || hotspot.workflowStage === filter);
   }), [displayedHotspotRows, filter, searchQuery]);
+  const pendingSupervisionSubmissionIds = useMemo(
+    () => supervisionSessions
+      .filter((session) => session.workflowStatus === "awaiting_enumerator_signature" || session.workflowStatus === "awaiting_coordinator_completion")
+      .flatMap((session) => session.submissionIds),
+    [supervisionSessions],
+  );
   const totalHotspots = dashboardSummary?.total;
   const activeHotspots = dashboardSummary?.active;
   const pendingQc = dashboardSummary?.pendingQc;
@@ -335,6 +353,23 @@ export default function Home() {
   const isReviewer = isCoordinator || isAnalyst || roleKey === "admin";
   const reviewerKind = roleKey === "admin" ? "admin" : isCoordinator ? "coordinator" : isAnalyst ? "analyst" : "other";
   const canSupervise = isCoordinator || roleKey === "admin";
+  const canSuperviseSelectedHotspot = Boolean(
+    canSupervise
+    && selectedHotspot
+    && selectedHotspot.enumeratorUid
+    && canReviewWorkflowStage("coordinator", selectedHotspot.workflowStage)
+    && !pendingSupervisionSubmissionIds.includes(selectedHotspot.id),
+  );
+  const coordinatorSupervisionSessions = supervisionSessions.filter((session) => (
+    roleKey === "admin" || session.coordinatorUid === authUser?.uid
+  ));
+  const pendingCoordinatorSupervisionSessions = coordinatorSupervisionSessions.filter((session) => (
+    session.workflowStatus === "awaiting_enumerator_signature"
+    || session.workflowStatus === "awaiting_coordinator_completion"
+  ));
+  const supervisionHistory = [...coordinatorSupervisionSessions].sort((a, b) => (
+    b.reviewDate.localeCompare(a.reviewDate)
+  ));
   const roleTitle = isEnumerator ? "Ruang Kerja Enumerator" : isCoordinator ? "Dashboard Koordinator" : isAnalyst ? "Dashboard Data Analis" : roleKey === "admin" ? "Dashboard Administrator" : isLegacySupervisor ? "Akun Supervisor lama" : "Dashboard Pendataan Hotspot";
   const roleSubtitle = isEnumerator
     ? "Kelola pendataan dan pantau hasil pemeriksaan hotspot yang Anda kirim."
@@ -800,15 +835,23 @@ export default function Home() {
         <section className="intro-row"><div><p className="eyebrow">{isEnumerator ? "Pendataan Lapangan" : "Pemantauan & Pemeriksaan Kualitas"}</p><h1>{roleTitle}</h1><p className="subtitle">{roleSubtitle}</p></div><div className="sync-note"><span className="live-dot" /> Pembaruan data <strong>{lastUpdated}</strong></div></section>
         {isLegacySupervisor && <p className="dashboard-summary-error" role="status">Role Supervisor tidak digunakan dalam proposal kegiatan. Hubungi Admin untuk mengubah role akun menjadi Koordinator Kegiatan.</p>}
         {isEnumerator && <section className="role-actions"><article><span className="role-action-icon">＋</span><div><strong>Input data hotspot</strong><p>Tambahkan hasil pemetaan baru dari lapangan.</p></div><button className="button button-accent" onClick={() => setShowEnumeratorForm(true)}>Mulai input →</button></article><article><span className="role-action-icon role-action-blue">◷</span><div><strong>Menunggu pemeriksaan</strong><p>Pantau status data yang sudah Anda kirim.</p></div>        <strong className="role-action-count">{pendingQc ?? "—"}</strong></article></section>}
-        {(isCoordinator || isAnalyst) && <section className="panel role-workflow-guide" aria-label={`Panduan tugas ${isCoordinator ? "Koordinator" : "Data Analis"}`}>
-          <div>
+        {(isCoordinator || isAnalyst) && <details className="panel role-workflow-guide" aria-label={`Panduan tugas ${isCoordinator ? "Koordinator" : "Data Analis"}`}>
+          <summary className="role-workflow-summary">
+            <div>
             <p className="eyebrow">Panduan teknis dashboard</p>
             <h2>{isCoordinator ? "Proses supervisi hotspot" : "Proses pemeriksaan data"}</h2>
+            </div>
+            <span className="role-workflow-summary-meta">
+              <span className="role-workflow-count">{hotspotRows.filter((row) => canReviewWorkflowStage(reviewerKind, row.workflowStage)).length}<small>siap ditangani<br />dari data termuat</small></span>
+              <span className="role-workflow-chevron" aria-hidden="true">⌄</span>
+            </span>
+          </summary>
+          <div className="role-workflow-content">
             <ol className="role-workflow-steps">
               {(isCoordinator
                 ? [
                     "Buka hotspot berstatus Menunggu supervisi Koordinator atau Perlu perbaikan, lalu periksa detailnya.",
-                    "Klik Form Supervisi, pilih enumerator, dan centang hanya hotspot yang diperiksa pada sesi ini.",
+                    "Buka tab Supervisi, klik Buat supervisi, pilih enumerator, dan centang hotspot yang diperiksa pada sesi ini.",
                     "Isi semua checklist, temuan, kendala, dan tindak lanjut.",
                     "Pilih kesimpulan: Lolos meneruskan data ke Data Analis; Pending mempertahankannya di antrean Koordinator; Perlu perbaikan mengirimnya ke tindak lanjut.",
                     "Simpan draft. Enumerator menandatangani melalui akunnya sendiri; setelah itu, pilih Selesaikan supervisi pada antrean Koordinator.",
@@ -825,9 +868,7 @@ export default function Home() {
               ? "Perubahan status hotspot diterapkan setelah Enumerator menandatangani dan Koordinator menyelesaikan sesi."
               : "Pemeriksaan dilakukan per hotspot yang sudah lolos supervisi Koordinator."}</strong>
           </div>
-          <span className="role-workflow-count">{hotspotRows.filter((row) => canReviewWorkflowStage(reviewerKind, row.workflowStage)).length}<small>siap ditangani<br />dari data termuat</small></span>
-        </section>}
-        <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={totalHotspots === undefined ? "—" : String(totalHotspots)} note={dashboardSummaryLoading ? "Memuat seluruh data..." : dashboardSummaryError || "Total seluruh data"} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={activeHotspots === undefined ? "—" : String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={pendingQc === undefined ? "—" : String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={hivPositive === undefined ? "—" : String(hivPositive)} suffix={hivTests === undefined ? "" : `/ ${hivTests} Tes`} note="Akumulasi seluruh data" icon="♥" /></section>
+        </details>}
         {dataError && <p className="dashboard-summary-error" role="alert">{dataError}</p>}
         {dashboardSummaryError && <p className="dashboard-summary-error" role="alert">{dashboardSummaryError} <button type="button" onClick={() => void refreshDashboardSummary(authUser, userProfile)}>Coba lagi</button></p>}
         {supervisionError && <p className="dashboard-summary-error" role="alert">{supervisionError}</p>}
@@ -863,21 +904,44 @@ export default function Home() {
             </table>
           </div>
         </section>}
-        {canSupervise && supervisionSessions.some((session) => session.workflowStatus === "awaiting_enumerator_signature" || session.workflowStatus === "awaiting_coordinator_completion") && <section className="panel coordinator-supervision-queue">
-          <div><p className="eyebrow">Antrean supervisi</p><h2>Konfirmasi tanda tangan dan penyelesaian</h2></div>
-          {supervisionSessions.filter((session) => (session.workflowStatus === "awaiting_enumerator_signature" || session.workflowStatus === "awaiting_coordinator_completion") && (roleKey === "admin" || session.coordinatorUid === authUser?.uid)).map((session) => <article className="coordinator-supervision-item" key={session.id}>
-            <div><strong>{session.enumeratorName || "Enumerator"} · {session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</strong><small>{session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu Enumerator menandatangani dari akunnya." : `Ditandatangani ${session.pengesahanTandaTanganEnumerator?.signerName || "Enumerator"} · ${session.pengesahanTanggalEnumerator || "tanggal tidak tercatat"}; sesi siap diselesaikan.`}</small>{session.pengesahanTandaTanganEnumerator?.fileId && <NextImage className="coordinator-signature-preview" src={`/api/documents/preview?fileId=${encodeURIComponent(session.pengesahanTandaTanganEnumerator.fileId)}`} alt={`Tanda tangan ${session.enumeratorName || "Enumerator"}`} width={460} height={130} unoptimized />}</div>
-            <button type="button" className="button button-primary" disabled={session.workflowStatus !== "awaiting_coordinator_completion" || completingSupervisionId === session.id} onClick={() => void completeSupervisionSession(session)}>{completingSupervisionId === session.id ? "Menyelesaikan..." : "Selesaikan supervisi"}</button>
-          </article>)}
-        </section>}
-        {!isEnumerator && <nav className="dashboard-tabs" role="tablist" aria-label="Tampilan dashboard"><button type="button" role="tab" id="dashboard-data-tab" aria-selected={activeDashboardTab === "data"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "data" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("data")}>Data &amp; pemeriksaan</button><button type="button" role="tab" id="dashboard-progress-tab" aria-selected={activeDashboardTab === "progress"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "progress" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => { setActiveDashboardTab("progress"); void refreshDashboardSummary(authUser, userProfile); }}>Progres Enumerator</button><button type="button" role="tab" id="dashboard-analytics-tab" aria-selected={activeDashboardTab === "analytics"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "analytics" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("analytics")}>Analitik</button></nav>}
-        {!isEnumerator && activeDashboardTab !== "data"
+        <nav className="dashboard-tabs" role="tablist" aria-label="Tampilan dashboard"><button type="button" role="tab" id="dashboard-data-tab" aria-selected={activeDashboardTab === "data"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "data" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("data")}>{isEnumerator ? "Data saya" : "Data & pemeriksaan"}</button>{!isEnumerator && <button type="button" role="tab" id="dashboard-progress-tab" aria-selected={activeDashboardTab === "progress"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "progress" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => { setActiveDashboardTab("progress"); void refreshDashboardSummary(authUser, userProfile); }}>Progres Enumerator</button>}<button type="button" role="tab" id="dashboard-analytics-tab" aria-selected={activeDashboardTab === "analytics"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "analytics" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("analytics")}>Analitik</button>{canSupervise && <button type="button" role="tab" id="dashboard-supervision-tab" aria-selected={activeDashboardTab === "supervision"} aria-controls="dashboard-active-panel" className={activeDashboardTab === "supervision" ? "dashboard-tab is-active" : "dashboard-tab"} onClick={() => setActiveDashboardTab("supervision")}>Supervisi</button>}</nav>
+        {activeDashboardTab !== "data"
           ? <div id="dashboard-active-panel" role="tabpanel" tabIndex={0} aria-labelledby={`dashboard-${activeDashboardTab}-tab`}>
             {activeDashboardTab === "progress"
               ? <EnumeratorProgress summary={dashboardSummary} loading={dashboardSummaryLoading} error={dashboardSummaryError} onRefresh={() => void refreshDashboardSummary(authUser, userProfile)} />
-              : <DashboardAnalytics rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />}
+              : activeDashboardTab === "analytics"
+                ? <>
+                  <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={totalHotspots === undefined ? "—" : String(totalHotspots)} note={dashboardSummaryLoading ? "Memuat seluruh data..." : dashboardSummaryError || "Total seluruh data"} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={activeHotspots === undefined ? "—" : String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={pendingQc === undefined ? "—" : String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={hivPositive === undefined ? "—" : String(hivPositive)} suffix={hivTests === undefined ? "" : `/ ${hivTests} Tes`} note="Akumulasi seluruh data" icon="♥" /></section>
+                  <DashboardAnalytics rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
+                  <DashboardOverview rows={hotspotRows} totalRows={totalHotspots ?? hotspotRows.length} />
+                </>
+                : <section className="supervision-dashboard">
+                  <div className="panel supervision-dashboard-heading"><div><p className="eyebrow">Supervisi lapangan</p><h2>Kelola dan pantau sesi supervisi</h2><p>Buat sesi supervisi baru atau lihat riwayat sesi yang pernah dibuat.</p></div><button type="button" className="button button-primary" onClick={() => { setInitialSupervisionSubmissionId(null); setShowSupervisionForm(true); }}>＋ Buat supervisi</button></div>
+                  {supervisionError && <p className="dashboard-summary-error" role="alert">{supervisionError}</p>}
+                  <section className="panel coordinator-supervision-queue">
+                    <div><p className="eyebrow">Antrean supervisi</p><h2>Menunggu tanda tangan atau penyelesaian</h2></div>
+                    {pendingCoordinatorSupervisionSessions.map((session) => <article className="coordinator-supervision-item" key={session.id}>
+                      <div><strong>{session.enumeratorName || "Enumerator"} · {session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</strong><small>{session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu Enumerator menandatangani." : `Ditandatangani ${session.pengesahanTandaTanganEnumerator?.signerName || "Enumerator"} · ${session.pengesahanTanggalEnumerator || "tanggal tidak tercatat"}; sesi siap diselesaikan.`}</small>{session.pengesahanTandaTanganEnumerator?.fileId && <NextImage className="coordinator-signature-preview" src={`/api/documents/preview?fileId=${encodeURIComponent(session.pengesahanTandaTanganEnumerator.fileId)}`} alt={`Tanda tangan ${session.enumeratorName || "Enumerator"}`} width={460} height={130} unoptimized />}</div>
+                      <button type="button" className="button button-primary" disabled={session.workflowStatus !== "awaiting_coordinator_completion" || completingSupervisionId === session.id} onClick={() => void completeSupervisionSession(session)}>{completingSupervisionId === session.id ? "Menyelesaikan..." : "Selesaikan supervisi"}</button>
+                    </article>)}
+                    {!pendingCoordinatorSupervisionSessions.length && <p className="supervision-history-empty">{supervisionLoading ? "Memuat sesi supervisi..." : "Tidak ada sesi yang menunggu tindakan."}</p>}
+                  </section>
+                  <section className="panel supervision-history">
+                    <div><p className="eyebrow">Riwayat</p><h2>Riwayat supervisi</h2></div>
+                    <div className="table-wrap"><table><thead><tr><th>TANGGAL</th><th>ENUMERATOR</th><th>HOTSPOT</th><th>KESIMPULAN</th><th>STATUS</th></tr></thead><tbody>
+                      {supervisionHistory.map((session) => <tr key={session.id}>
+                        <td>{session.reviewDate || "—"}</td>
+                        <td>{session.enumeratorName || "—"}</td>
+                        <td>{session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</td>
+                        <td>{session.kesimpulanSupervisi === "valid" ? "Lolos supervisi" : session.kesimpulanSupervisi === "needs_revision" ? "Perlu perbaikan" : "Perlu tindak lanjut"}</td>
+                        <td>{session.workflowStatus === "completed" ? "Selesai" : session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu tanda tangan Enumerator" : session.workflowStatus === "awaiting_coordinator_completion" ? "Siap diselesaikan Koordinator" : session.workflowStatus || "—"}</td>
+                      </tr>)}
+                      {!supervisionHistory.length && <tr><td colSpan={5} className="empty-state">{supervisionLoading ? "Memuat riwayat supervisi..." : supervisionError ? "Riwayat supervisi tidak dapat dimuat." : "Belum ada riwayat supervisi."}</td></tr>}
+                    </tbody></table></div>
+                  </section>
+                </section>}
           </div>
-          : <div id={!isEnumerator ? "dashboard-active-panel" : undefined} role={!isEnumerator ? "tabpanel" : undefined} tabIndex={!isEnumerator ? 0 : undefined} aria-labelledby={!isEnumerator ? "dashboard-data-tab" : undefined}>
+          : <div id="dashboard-active-panel" role="tabpanel" tabIndex={0} aria-labelledby="dashboard-data-tab">
           <SubmissionTable
             rows={filteredHotspots}
             loadedRows={hotspotRows.length}
@@ -894,14 +958,15 @@ export default function Home() {
             onLoadMore={() => void loadMoreSubmissions()}
             deletingHotspotId={deletingHotspotId}
             onView={(hotspot) => { setSelectedHotspot(hotspot); setShowQcModal(false); }}
+            onRevise={(hotspot) => { setRevisionSubmission(hotspot); setShowEnumeratorForm(true); }}
             onDelete={(hotspot) => void removeHotspotData(hotspot)}
           />
-          <DashboardOverview rows={hotspotRows} totalRows={totalHotspots ?? hotspotRows.length} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
               </div>}
       </main>
       {showUserManagement && <UserManagementModal users={managedUsers} loading={userManagementLoading} error={userManagementError} editingUser={editingUser} creatingUser={creatingUser} onClose={() => { setShowUserManagement(false); setEditingUser(null); setCreatingUser(false); }} onAdd={() => { setEditingUser(null); setCreatingUser(true); setUserManagementError(""); }} onCancelEdit={() => { setEditingUser(null); setCreatingUser(false); }} onEdit={(user) => { setEditingUser(user); setCreatingUser(false); }} onSave={saveUserProfile} onCreate={createUserProfile} onDelete={removeUserProfile} />}
-      {showEnumeratorForm && authUser && <EnumeratorForm user={authUser} profile={userProfile} existingHotspots={hotspotRows} onClose={() => setShowEnumeratorForm(false)} onSaved={() => { setShowEnumeratorForm(false); setLastUpdated("sekarang"); void refreshDashboardSummary(authUser, userProfile); }} />}
-      {canSupervise && authUser && <CoordinatorSupervisionForm open={showSupervisionForm} user={authUser} profile={userProfile} rows={hotspotRows} pendingSubmissionIds={supervisionSessions.filter((session) => session.workflowStatus === "awaiting_enumerator_signature" || session.workflowStatus === "awaiting_coordinator_completion").flatMap((session) => session.submissionIds)} onOpen={() => setShowSupervisionForm(true)} onClose={() => setShowSupervisionForm(false)} onSaved={() => {
+      {showEnumeratorForm && authUser && <EnumeratorForm key={revisionSubmission?.id || "new"} user={authUser} profile={userProfile} existingHotspots={hotspotRows} revision={revisionSubmission} onClose={() => { setShowEnumeratorForm(false); setRevisionSubmission(null); }} onSaved={() => { setShowEnumeratorForm(false); setRevisionSubmission(null); setLastUpdated("sekarang"); void refreshDashboardSummary(authUser, userProfile); }} />}
+      {canSupervise && authUser && <CoordinatorSupervisionForm key={initialSupervisionSubmissionId || "default"} open={showSupervisionForm} initialSubmissionId={initialSupervisionSubmissionId} user={authUser} profile={userProfile} rows={hotspotRows} pendingSubmissionIds={pendingSupervisionSubmissionIds} onClose={() => { setInitialSupervisionSubmissionId(null); setShowSupervisionForm(false); }} onSaved={() => {
+        setInitialSupervisionSubmissionId(null);
         setShowSupervisionForm(false);
         setLastUpdated("sekarang");
       }} />}
@@ -915,7 +980,11 @@ export default function Home() {
           setLastUpdated("sekarang");
         }}
       />}
-      {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={canReviewSelectedHotspot} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} />}
+      {selectedHotspot && !showQcModal && <ReviewDetailModal hotspot={selectedHotspot} canReview={canReviewSelectedHotspot} canSupervise={canSuperviseSelectedHotspot} onClose={() => setSelectedHotspot(null)} onReview={() => setShowQcModal(true)} onSupervise={() => {
+        setInitialSupervisionSubmissionId(selectedHotspot.id);
+        setSelectedHotspot(null);
+        setShowSupervisionForm(true);
+      }} />}
       {selectedHotspot && showQcModal && canReviewSelectedHotspot && <ReviewQcModal key={`${selectedHotspot.id}-${authUser?.uid || ""}`} hotspot={selectedHotspot} reviewerRole={isCoordinator && roleKey !== "admin" || roleKey === "admin" && selectedHotspot.workflowStage !== "analyst_review" ? "coordinator" : "analyst"} onClose={() => setShowQcModal(false)} onSave={saveQcStatus} onAiReview={reviewQcWithAi} reviewerName={userProfile?.nama || userProfile?.name || authUser?.displayName || authUser?.email?.split("@")[0] || ""} />}
     </div>
   );
@@ -943,6 +1012,7 @@ function SubmissionTable({
   onLoadMore,
   deletingHotspotId,
   onView,
+  onRevise,
   onDelete,
 }: {
   rows: Hotspot[];
@@ -960,6 +1030,7 @@ function SubmissionTable({
   onLoadMore: () => void;
   deletingHotspotId: string | null;
   onView: (hotspot: Hotspot) => void;
+  onRevise: (hotspot: Hotspot) => void;
   onDelete: (hotspot: Hotspot) => void;
 }) {
   const title = isEnumerator ? "Data Pendataan Saya" : "Data Survei & Pemeriksaan Kualitas";
@@ -984,6 +1055,7 @@ function SubmissionTable({
         <td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td>
         <td><span className="workflow-badge">{workflowStageLabels[hotspot.workflowStage]}</span></td>
         <td><button className="row-action" onClick={() => onView(hotspot)} aria-label={`Lihat detail ${hotspot.name}`}>→</button>
+          {isEnumerator && hotspot.workflowStage === "needs_revision" && <button type="button" className="row-action" onClick={() => onRevise(hotspot)} aria-label={`Perbaiki data ${hotspot.name}`} title="Perbaiki data">Revisi</button>}
           {isAdmin && <button type="button" className="row-action row-action-danger" onClick={() => onDelete(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}
         </td>
       </tr>)}{rows.length === 0 && <tr><td colSpan={8} className="empty-state">{loading ? "Memuat data terbaru..." : "Data tidak ditemukan."}</td></tr>}</tbody>
@@ -1438,18 +1510,28 @@ function EnumeratorSignatureCard({ session, user, profile, onClose, onSigned }: 
   </div>;
 }
 
-function CoordinatorSupervisionForm({ open, user, profile, rows, pendingSubmissionIds, onOpen, onClose, onSaved }: { open: boolean; user: User; profile: UserProfile | null; rows: Hotspot[]; pendingSubmissionIds: string[]; onOpen: () => void; onClose: () => void; onSaved: () => void }) {
+function CoordinatorSupervisionForm({ open, initialSubmissionId, user, profile, rows, pendingSubmissionIds, onClose, onSaved }: { open: boolean; initialSubmissionId: string | null; user: User; profile: UserProfile | null; rows: Hotspot[]; pendingSubmissionIds: string[]; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [selectedEnumerator, setSelectedEnumerator] = useState("");
-  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>([]);
+  const initialSubmission = initialSubmissionId ? rows.find((row) => row.id === initialSubmissionId) : undefined;
+  const initialSubmissionEligible = Boolean(
+    initialSubmission?.enumeratorUid
+    && canReviewWorkflowStage("coordinator", initialSubmission.workflowStage)
+    && !pendingSubmissionIds.includes(initialSubmission.id),
+  );
+  const [selectedEnumerator, setSelectedEnumerator] = useState(initialSubmissionEligible ? initialSubmission?.enumeratorUid || "" : "");
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>(initialSubmissionEligible && initialSubmission ? [initialSubmission.id] : []);
   const [decision, setDecision] = useState<SupervisionDecision>("valid");
   const [coordinatorSignature, setCoordinatorSignature] = useState<SupervisionSignature | null>(null);
   const enumerators = Array.from(new Map(rows.filter((row) => row.enumeratorUid).map((row) => [row.enumeratorUid!, row.enumeratorName || "Nama belum diatur"])).entries());
   const enumeratorRows = rows.filter((row) => row.enumeratorUid === selectedEnumerator);
   const selectedEnumeratorName = enumerators.find(([uid]) => uid === selectedEnumerator)?.[1] || "";
   const pendingSubmissionIdSet = new Set(pendingSubmissionIds);
-  const eligibleRows = enumeratorRows.filter((row) => canReviewWorkflowStage("coordinator", row.workflowStage) && !pendingSubmissionIdSet.has(row.id));
+  const eligibleRows = enumeratorRows.filter((row) => (
+    (!initialSubmissionId || row.id === initialSubmissionId)
+    && canReviewWorkflowStage("coordinator", row.workflowStage)
+    && !pendingSubmissionIdSet.has(row.id)
+  ));
   const selectedRows = eligibleRows.filter((row) => selectedSubmissionIds.includes(row.id));
   const selectedOrganization = selectedRows.map((row) => normalizeOrganization(row.organisasi)).find(Boolean) || "";
   const selectedOrganizationLabel = organizationOptions.find(([value]) => value === selectedOrganization)?.[1] || "";
@@ -1548,7 +1630,7 @@ function CoordinatorSupervisionForm({ open, user, profile, rows, pendingSubmissi
     }
   }
 
-  if (!open) return <button type="button" className="supervision-launch button button-ghost" onClick={onOpen} aria-label="Buka form supervisi Koordinator">☑ <span>Form Supervisi</span></button>;
+  if (!open) return null;
   return (
     <div className="user-modal-backdrop">
       <section className="user-modal supervision-modal" role="dialog" aria-modal="true" aria-labelledby="supervision-form-title">
@@ -1571,7 +1653,7 @@ function CoordinatorSupervisionForm({ open, user, profile, rows, pendingSubmissi
             <legend>Hotspot yang benar-benar diperiksa dalam sesi ini</legend>
             {!selectedEnumerator ? <p>Pilih enumerator untuk menampilkan data yang dapat disupervisi.</p> : eligibleRows.length ? eligibleRows.map((row) => (
               <label key={row.id}>
-                <input type="checkbox" checked={selectedSubmissionIds.includes(row.id)} onChange={(event) => { setSelectedSubmissionIds((ids) => event.target.checked ? [...ids, row.id] : ids.filter((id) => id !== row.id)); setCoordinatorSignature(null); }} />
+                <input type="checkbox" checked={selectedSubmissionIds.includes(row.id)} disabled={Boolean(initialSubmissionId)} onChange={(event) => { setSelectedSubmissionIds((ids) => event.target.checked ? [...ids, row.id] : ids.filter((id) => id !== row.id)); setCoordinatorSignature(null); }} />
                 <span><strong>{row.name}</strong><small>{row.id} · {row.area} · {row.workflowStage === "needs_revision" ? "Perlu tindak lanjut" : "Menunggu supervisi Koordinator"}</small></span>
               </label>
             )) : <p>Tidak ada hotspot enumerator ini pada antrean supervisi.</p>}
@@ -1608,25 +1690,25 @@ function SupervisionChecks({ title, name, items }: { title: string; name: string
   return <div className="supervision-check-section"><p className="form-section-title">{title}</p><div className="supervision-check-table"><div className="supervision-check-head"><span>No</span><span>Komponen pemeriksaan</span><span>Ya</span><span>Tidak</span></div>{items.map((item, index) => <div className="supervision-check-row" key={item}><span>{index + 1}</span><span>{item}</span><label><input type="radio" name={`${name}_${index + 1}`} value="ya" required /> Ya</label><label><input type="radio" name={`${name}_${index + 1}`} value="tidak" required /> Tidak</label></div>)}</div></div>;
 }
 
-function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: { user: User; profile: UserProfile | null; existingHotspots: Hotspot[]; onClose: () => void; onSaved: () => void }) {
+function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, onSaved }: { user: User; profile: UserProfile | null; existingHotspots: Hotspot[]; revision: Hotspot | null; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [previousVisits, setPreviousVisits] = useState<PreviousHotspot[]>(existingHotspots);
   const [previousVisitsLoading, setPreviousVisitsLoading] = useState(true);
   const submissionIdempotencyKey = useRef<string | null>(null);
-  const [locationType, setLocationType] = useState("");
-  const [locationSubtype, setLocationSubtype] = useState("");
-  const [statusHotspot, setStatusHotspot] = useState("");
-  const [hotspotCode, setHotspotCode] = useState("");
+  const [locationType, setLocationType] = useState(revision?.locationType || "");
+  const [locationSubtype, setLocationSubtype] = useState(revision?.locationSubtype || "");
+  const [statusHotspot, setStatusHotspot] = useState(revision?.statusHotspotValue || "");
+  const [hotspotCode, setHotspotCode] = useState(revision?.hotspotCode || "");
   const [hotspotCodeIdentity, setHotspotCodeIdentity] = useState("");
   const [hotspotCodeLoading, setHotspotCodeLoading] = useState(false);
-  const [hotspotName, setHotspotName] = useState("");
-  const [district, setDistrict] = useState("");
-  const [village, setVillage] = useState("");
-  const [address, setAddress] = useState("");
+  const [hotspotName, setHotspotName] = useState(revision?.name || "");
+  const [district, setDistrict] = useState(revision?.area.split("/")[0]?.trim() || "");
+  const [village, setVillage] = useState(revision?.area.split("/")[1]?.trim() || "");
+  const [address, setAddress] = useState(revision?.address || "");
   const [visitMode, setVisitMode] = useState<"initial" | "follow_up">("initial");
   const [previousHotspotId, setPreviousHotspotId] = useState("");
-  const [gps, setGps] = useState("");
+  const [gps, setGps] = useState(revision?.coordinates || "");
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsCandidate, setGpsCandidate] = useState<{ location: string; latitude: string; longitude: string; accuracy: number } | null>(null);
   const [gpsDialogMode, setGpsDialogMode] = useState<"searching" | "result" | null>(null);
@@ -1680,6 +1762,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
   }, []);
 
   useEffect(() => {
+    if (revision) return;
     const namaHotspot = hotspotName.trim();
     const kelurahan = village.trim();
     const alamat = address.trim();
@@ -1724,7 +1807,7 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [hotspotName, village, address, user]);
+  }, [hotspotName, village, address, revision, user]);
 
   const selectPreviousHotspot = (id: string) => {
     const hotspot = previousVisits.find((item) => item.id === id);
@@ -1741,9 +1824,9 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     if (mode === "initial") setPreviousHotspotId("");
   };
   const hotspotIdentity = JSON.stringify([hotspotName.trim(), village.trim(), address.trim()]);
-  const activeHotspotCode = hotspotCodeIdentity === hotspotIdentity ? hotspotCode : "";
+  const activeHotspotCode = revision?.hotspotCode || (hotspotCodeIdentity === hotspotIdentity ? hotspotCode : "");
   return <>
-    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={changeVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={setPreviousHotspotId} previousHotspots={previousVisits} previousVisitsLoading={previousVisitsLoading} onSelectPreviousHotspot={selectPreviousHotspot} locationSubtypes={locationSubtypes} />
+    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={changeVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={setPreviousHotspotId} previousHotspots={previousVisits} previousVisitsLoading={previousVisitsLoading} onSelectPreviousHotspot={selectPreviousHotspot} locationSubtypes={locationSubtypes} revision={revision} />
     {saving && <FormSubmissionLoading />}
     <GpsConfirmationDialog key={gpsStartedAt} mode={gpsDialogMode} result={gpsCandidate} startedAt={gpsStartedAt} onCancel={cancelGps} onAccept={acceptGps} onRetry={retryGps} />
   </>;
@@ -1832,21 +1915,24 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
     event.preventDefault();
     if (!db) return setError("Sistem data belum siap.");
     if (gpsLoading) return setError("Tunggu sampai GPS selesai mengambil lokasi.");
-    if (!normalizeOrganization(profile?.organisasi)) return setError("Organisasi pada profil Anda belum diatur. Hubungi admin sebelum mengirim data.");
+    if (!revision && !normalizeOrganization(profile?.organisasi)) return setError("Organisasi pada profil Anda belum diatur. Hubungi admin sebelum mengirim data.");
     if (hotspotCodeLoading) return setError("Tunggu sampai kode hotspot selesai dibuat.");
     if (!activeHotspotCode) return setError("Lengkapi nama hotspot, kelurahan, dan alamat untuk membuat kode hotspot.");
     const form = new FormData(event.currentTarget);
-    const allDocuments = [1, 2, 3].map((number) => form.get(number === 1 ? "document" : `document${number}`) as File);
-    if (allDocuments.slice(0, 2).some((file) => !file || !file.size)) return setError("Dua foto dokumentasi wajib dipilih.");
-    const documents = allDocuments.filter((file) => file && file.size);
+    const selectedDocuments = [1, 2, 3].map((number) => {
+      const file = form.get(number === 1 ? "document" : `document${number}`);
+      return file instanceof File && file.size ? file : null;
+    });
+    if (!revision && selectedDocuments.slice(0, 2).some((file) => !file)) return setError("Dua foto dokumentasi wajib dipilih.");
     if (!gps) return setError("Titik koordinat GPS wajib diambil dari perangkat.");
     const educated = Number(form.get("jumlahDiedukasi") || 0);
     setSaving(true);
     setError("");
     try {
       submissionIdempotencyKey.current ||= crypto.randomUUID();
-      const uploadResults: Array<{ fileName: string; fileId: string; fileUrl: string }> = [];
-      for (const [index, document] of documents.entries()) {
+      const uploadResults: Array<{ index: number; fileName: string; fileId: string; fileUrl: string }> = [];
+      for (const [index, document] of selectedDocuments.entries()) {
+        if (!document) continue;
         const uploadFile = await prepareImageForUpload(document);
         if (uploadFile.size > MAX_UPLOAD_FILE_BYTES) {
           throw new Error(`Foto "${document.name}" masih terlalu besar setelah diperkecil. Pilih foto lain dengan ukuran di bawah 2 MB.`);
@@ -1878,7 +1964,59 @@ function EnumeratorForm({ user, profile, existingHotspots, onClose, onSaved }: {
         if (!uploadResult.fileName || !uploadResult.fileId || !uploadResult.fileUrl) {
           throw new Error(`Upload foto ${index + 1} berhasil tetapi respons penyimpanan tidak lengkap. Coba kirim ulang.`);
         }
-        uploadResults.push({ fileName: uploadResult.fileName, fileId: uploadResult.fileId, fileUrl: uploadResult.fileUrl });
+        uploadResults.push({ index, fileName: uploadResult.fileName, fileId: uploadResult.fileId, fileUrl: uploadResult.fileUrl });
+      }
+      if (revision) {
+        if (revision.workflowStage !== "needs_revision" || revision.enumeratorUid !== user.uid) {
+          throw new Error("Data ini tidak lagi tersedia untuk direvisi.");
+        }
+        const revisedDocuments: Array<{ name: string; fileId?: string; url?: string; idempotencyKey?: string }> = [...(revision.documents || [])];
+        uploadResults.forEach((uploadResult) => {
+          revisedDocuments[uploadResult.index] = {
+            name: uploadResult.fileName,
+            fileId: uploadResult.fileId,
+            url: uploadResult.fileUrl,
+            idempotencyKey: `${submissionIdempotencyKey.current}-${uploadResult.index + 1}`,
+          };
+        });
+        if (revisedDocuments.length < 2) throw new Error("Dua foto dokumentasi harus tersedia. Pilih foto pengganti yang belum tersimpan.");
+        const revisedAt = new Date().toISOString();
+        await updateDoc(doc(db, "submissions", revision.id), {
+          namaHotspot: String(form.get("namaHotspot") || "").trim(),
+          kecamatan: String(form.get("kecamatan") || "").trim(),
+          kelurahan: String(form.get("kelurahan") || "").trim(),
+          alamat: String(form.get("alamat") || "").trim(),
+          koordinat: gps,
+          statusHotspot: String(form.get("statusHotspot") || "").trim(),
+          statusVerifikasi: String(form.get("statusHotspot") || "").trim() === "perlu_verifikasi" ? "perlu_verifikasi" : "terverifikasi_lapangan",
+          populasiKunci: form.getAll("populasiKunci"),
+          tipeLokasi: String(form.get("tipeLokasi") || "").trim(),
+          subTipeLokasi: String(form.get("subTipeLokasi") || "").trim(),
+          tipeLokasiLainnya: String(form.get("tipeLokasiLainnya") || "").trim(),
+          waktuAktivitas: form.getAll("waktuAktivitas"),
+          estimasiJumlahPopulasi: Number(form.get("estimasiJumlahPopulasi") || 0),
+          jumlahDiedukasi: educated,
+          catatan: String(form.get("catatan") || "").trim(),
+          sumberInformasi: String(form.get("sumberInformasi") || "").trim(),
+          noHpInforman: String(form.get("noHpInforman") || "").trim(),
+          keteranganAktivitas: String(form.get("keteranganAktivitas") || "").trim(),
+          kondisiSaatPemetaan: String(form.get("kondisiSaatPemetaan") || "").trim(),
+          document: revisedDocuments[0],
+          documents: revisedDocuments,
+          coordinatorReviewStatus: "Pending",
+          workflowStage: "coordinator_review",
+          workflowUpdatedByRole: "enumerator",
+          workflowHistory: arrayUnion({
+            stage: "coordinator_review",
+            role: "enumerator",
+            uid: user.uid,
+            actorName: profile?.nama || user.displayName || "",
+            at: revisedAt,
+            note: "Enumerator mengirim revisi untuk ditinjau kembali oleh Koordinator.",
+          }),
+        });
+        onSaved();
+        return;
       }
       const normalizedHotspotCode = String(form.get("kodeHotspot") || "").trim().toUpperCase();
       const selectedVisitMode = String(form.get("visitMode") || "");

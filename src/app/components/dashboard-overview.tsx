@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { LayerGroup, Map as LeafletMap } from "leaflet";
-import { PanelHeading, Risk } from "@/app/components/dashboard";
+import { PanelHeading } from "@/app/components/dashboard";
 
 type OverviewRow = {
   id: string;
@@ -13,20 +13,7 @@ type OverviewRow = {
   coordinates?: string;
 };
 
-export function DashboardOverview({ rows, totalRows = rows.length, canLoadMore = true, onLoadMore }: { rows: OverviewRow[]; totalRows?: number; canLoadMore?: boolean; onLoadMore?: () => void }) {
-  const areaCounts = rows.reduce<Record<string, number>>((counts, row) => {
-    const area = row.area.split("/")[0].trim() || "Lainnya";
-    counts[area] = (counts[area] || 0) + 1;
-    return counts;
-  }, {});
-  const areas = Object.entries(areaCounts).sort((first, second) => second[1] - first[1]);
-  const maxArea = areas[0]?.[1] || 1;
-  const risks = [
-    ["HOTSPOT BARU", rows.filter((row) => row.status === "Baru").length, "teal"],
-    ["TIDAK AKTIF", rows.filter((row) => row.status === "Tidak aktif").length, "coral"],
-    ["MENUNGGU PEMERIKSAAN", rows.filter((row) => row.qc === "Pending").length, "amber"],
-    ["PERLU PERBAIKAN", rows.filter((row) => row.qc === "Perlu perbaikan").length, "blue"],
-  ] as const;
+export function DashboardOverview({ rows, totalRows = rows.length }: { rows: OverviewRow[]; totalRows?: number }) {
   const coordinateCount = rows.filter((row) => {
     const [latitude, longitude] = (row.coordinates || "").split(/[\s,]+/).map(Number);
     return Number.isFinite(latitude) && Number.isFinite(longitude);
@@ -34,7 +21,8 @@ export function DashboardOverview({ rows, totalRows = rows.length, canLoadMore =
 
   const loadedScope = totalRows > rows.length ? `${rows.length} dari ${totalRows} data termuat` : `${rows.length} data`;
 
-  return <section className="real-overview"><div className="real-overview-grid"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} memiliki koordinat · ${loadedScope}`} tag="DATA LAPANGAN" /><RealLeafletMap rows={rows} /></article>  <article className="panel distribution-panel"><PanelHeading icon="◔" title="Distribusi Kecamatan" subtitle={`Rekap pada ${loadedScope}`} /><div className="real-bars">{areas.length === 0 ? <div className="real-empty">Belum ada data wilayah.</div> : areas.slice(0, 6).map(([area, count], index) => <div className="real-bar-row" key={area}><div><span>{area}</span><strong>{count}</strong></div><i className={`real-bar real-bar-${index % 4}`} style={{ width: `${Math.max(8, (count / maxArea) * 100)}%` }} /></div>)}</div></article></div><article className="panel real-risk-panel"><PanelHeading icon="!" title="Ringkasan Perhatian" subtitle={`Ikhtisar status pada ${loadedScope}`} tag="DATA LAPANGAN" /><div className="risk-grid">{risks.map(([label, value, tone]) => <Risk key={label} label={label} value={String(value)} tone={tone} />)}</div></article>{canLoadMore && rows.length >= 25 && <button type="button" className="button button-secondary" onClick={onLoadMore}>Muat data berikutnya</button>}</section>;}
+  return <section className="real-overview" aria-label="Peta sebaran hotspot"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} memiliki koordinat · ${loadedScope}`} tag="DATA LAPANGAN" /><div className="hotspot-map-legend" aria-label="Legenda peta"><span><i className="map-marker-swatch map-marker-new" />Hotspot baru</span><span><i className="map-marker-swatch map-marker-existing" />Hotspot lama</span></div><RealLeafletMap rows={rows} /></article></section>;
+}
 
 function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -84,12 +72,23 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
       if (!active || !currentMap || !layer) return;
       try {
         layer.clearLayers();
-        points.forEach(({ row, lat, lng }) => {
+        points.forEach(({ row, lat, lng }, index) => {
           const popup = document.createElement("div");
           const name = document.createElement("strong");
           name.textContent = row.name;
-          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Status pemeriksaan: ${row.qc}`));
-          leaflet.circleMarker([lat, lng], { radius: 8, color: "#ffffff", weight: 3, fillColor: row.qc === "Valid" ? "#0f9f94" : row.qc === "Perlu perbaikan" ? "#ec765d" : "#e5ad44", fillOpacity: 1 }).bindPopup(popup).addTo(layer);
+          popup.append(name, document.createElement("br"), document.createTextNode(row.area), document.createElement("br"), document.createTextNode(`Kategori: ${row.status === "Baru" ? "Hotspot baru" : "Hotspot lama"}`), document.createElement("br"), document.createTextNode(`Status pemeriksaan: ${row.qc}`));
+          const isNewHotspot = row.status === "Baru";
+          const color = isNewHotspot ? "#ec765d" : "#0f9f94";
+          const shadowColor = isNewHotspot ? "#a83d32" : "#08645e";
+          const gradientId = `hotspot-pin-gradient-${index}`;
+          const icon = leaflet.divIcon({
+            className: "hotspot-marker-icon",
+            html: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="29" viewBox="0 0 30 38" aria-hidden="true"><defs><linearGradient id="${gradientId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${color}"/><stop offset=".58" stop-color="${color}"/><stop offset="1" stop-color="${shadowColor}"/></linearGradient></defs><path d="M15 1.5C7.82 1.5 2 7.32 2 14.5c0 9.1 13 22 13 22s13-12.9 13-22c0-7.18-5.82-13-13-13Z" fill="url(#${gradientId})" stroke="#fff" stroke-width="2"/><path d="M8 8.5c1.8-2.6 4.3-3.8 7-3.8" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".65" stroke-width="2"/><circle cx="15" cy="14.5" r="4.5" fill="#fff" fill-opacity=".95"/></svg>`,
+            iconSize: [22, 29],
+            iconAnchor: [11, 28],
+            popupAnchor: [0, -26],
+          });
+          leaflet.marker([lat, lng], { icon, title: isNewHotspot ? "Hotspot baru" : "Hotspot lama" }).bindPopup(popup).addTo(layer);
         });
         if (points.length === 1) currentMap.setView([points[0].lat, points[0].lng], 14);
         if (points.length > 1) currentMap.fitBounds(points.map((point) => [point.lat, point.lng] as [number, number]), { padding: [24, 24], maxZoom: 15 });
