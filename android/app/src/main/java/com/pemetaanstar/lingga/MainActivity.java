@@ -12,10 +12,12 @@ import android.graphics.Color;
 import android.webkit.GeolocationPermissions;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.util.Base64;
 
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
@@ -29,7 +31,9 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.io.File;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Locale;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -38,6 +42,40 @@ import java.util.Set;
 public class MainActivity extends ComponentActivity {
     private static final String START_URL = "https://pemetaanlingga.vercel.app/";
     private static final String APP_HOST = "pemetaanlingga.vercel.app";
+    private static final String OFFLINE_PAGE = """
+            <!doctype html>
+            <html lang="id">
+            <head>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <meta name="theme-color" content="#f4f7fa">
+              <title>Lingga Indonesia - Offline</title>
+              <style>
+                * { box-sizing: border-box; }
+                body { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; margin: 0; padding: 20px; color: #14253d; font-family: Arial, sans-serif; background: radial-gradient(ellipse at 10% 8%, #dcefeb 0, transparent 36%), radial-gradient(ellipse at 94% 90%, #f7e7dd 0, transparent 30%), #f4f7fa; }
+                main { width: min(100%, 420px); padding: 34px 30px 26px; text-align: center; border: 1px solid #fff; border-radius: 24px; background: #fffffffa; box-shadow: 0 24px 70px #19314f20; }
+                img { display: block; width: 64px; height: 64px; margin: 0 auto 18px; border: 1px solid #e8edf0; border-radius: 17px; box-shadow: 0 8px 20px #19314f16; }
+                .status { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 18px; padding: 7px 10px; border: 1px solid #f0ded9; border-radius: 999px; color: #965342; background: #fff8f5; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+                .dot { width: 8px; height: 8px; border-radius: 50%; background: #d46b51; }
+                h1 { margin: 0 0 10px; font-size: 23px; letter-spacing: -.04em; }
+                p { margin: 0; color: #728092; font-size: 14px; line-height: 1.6; }
+                a { position: relative; display: flex; min-height: 46px; align-items: center; justify-content: center; margin-top: 22px; border: 1px solid #164e4a; border-radius: 10px; color: #fff; background: linear-gradient(110deg, #17324a, #12665d); box-shadow: 0 7px 16px #124f482b; font-size: 14px; font-weight: 700; text-decoration: none; }
+                a span { position: absolute; right: 14px; font-size: 19px; }
+                footer { margin-top: 20px; padding-top: 14px; border-top: 1px solid #edf0f2; color: #748394; font-size: 11px; }
+                @media (max-width: 380px) { main { padding: 28px 22px 22px; } h1 { font-size: 21px; } }
+              </style>
+            </head>
+            <body>
+              <main>
+                <img src="data:image/webp;base64,{{LOGO}}" alt="Lingga Indonesia">
+                <div class="status"><span class="dot"></span>TIDAK ADA KONEKSI</div>
+                <h1>Anda sedang offline</h1>
+                <p>Hubungkan perangkat ke internet untuk login dan membuka data terbaru.</p>
+                <a href="{{RETRY_URL}}">Coba lagi<span aria-hidden="true">→</span></a>
+                <footer>Lingga Indonesia · Pemetaan Kota Malang 2026</footer>
+              </main>
+            </body>
+            </html>
+            """;
     private static final int FILE_CHOOSER_REQUEST = 2001;
     private static final int LOCATION_PERMISSION_REQUEST = 2002;
 
@@ -46,6 +84,7 @@ public class MainActivity extends ComponentActivity {
     private Uri cameraImageUri;
     private GeolocationPermissions.Callback locationCallback;
     private String locationOrigin;
+    private boolean isShowingOfflinePage;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -95,6 +134,14 @@ public class MainActivity extends ComponentActivity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                Uri uri = Uri.parse(url);
+                if ("https".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost())) {
+                    isShowingOfflinePage = false;
+                }
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return routeUrl(request.getUrl());
             }
@@ -102,6 +149,28 @@ public class MainActivity extends ComponentActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return routeUrl(Uri.parse(url));
+            }
+
+            @Override
+            public void onReceivedError(
+                    WebView view,
+                    WebResourceRequest request,
+                    WebResourceError error
+            ) {
+                if (request.isForMainFrame()) {
+                    showOfflinePage();
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(
+                    WebView view,
+                    WebResourceRequest request,
+                    android.webkit.WebResourceResponse response
+            ) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 500) {
+                    showOfflinePage();
+                }
             }
         });
 
@@ -189,6 +258,35 @@ public class MainActivity extends ComponentActivity {
             return true;
         }
         return true;
+    }
+
+    private void showOfflinePage() {
+        if (isShowingOfflinePage || webView == null) return;
+        isShowingOfflinePage = true;
+        webView.loadDataWithBaseURL(
+                "https://offline.local/",
+                buildOfflinePage(),
+                "text/html",
+                "UTF-8",
+                null
+        );
+    }
+
+    private String buildOfflinePage() {
+        try (InputStream logo = getAssets().open("lingga-logo.webp");
+             ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[4096];
+            int count;
+            while ((count = logo.read(chunk)) != -1) {
+                buffer.write(chunk, 0, count);
+            }
+            String encodedLogo = Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP);
+            return OFFLINE_PAGE
+                    .replace("{{LOGO}}", encodedLogo)
+                    .replace("{{RETRY_URL}}", START_URL);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Unable to load the bundled offline logo.", exception);
+        }
     }
 
     private String resolveMimeType(String[] acceptTypes) {

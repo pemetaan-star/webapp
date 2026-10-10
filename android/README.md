@@ -1,8 +1,11 @@
 # Android WebView app
 
 This Android app opens the deployed web application at `https://pemetaanlingga.vercel.app/`.
-It requires an internet connection and keeps navigation inside the WebView limited to that
-HTTPS host. Links to other sites open in the device's browser.
+It requires an internet connection to log in and load application data. If the app cannot
+load its page, it displays a bundled offline screen with the Lingga logo and a retry button.
+This fallback does not provide offline login or access to cached dashboard data. Navigation
+inside the WebView is limited to that HTTPS host; links to other sites open in the device's
+browser.
 
 The wrapper supports photo/document selection, launching the camera for image fields, and
 the location permission requested by the web app. Android asks for location permission
