@@ -25,6 +25,7 @@ type Hotspot = {
   statusHotspotValue?: string;
   qc: "Valid" | "Pending" | "Perlu perbaikan";
   workflowStage: WorkflowStage;
+  workflowUpdatedByRole?: string;
   workflowHistory?: Array<{ stage: WorkflowStage; role: string; uid: string; actorName?: string; at: string; note?: string }>;
   createdAt: string;
   hotspotCode?: string;
@@ -67,6 +68,8 @@ type Hotspot = {
   coordinatorReviewKroscek?: string;
   coordinatorReviewerName?: string;
   coordinatorReviewDate?: string;
+  coordinatorReviewerUid?: string;
+  coordinatorReviewedAt?: string;
 };
 
 type SubmissionCursor = QueryDocumentSnapshot<DocumentData> | null;
@@ -186,6 +189,7 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       statusHotspotValue: String(data.statusHotspot || ""),
       qc: qc === "valid" ? "Valid" : qc === "perlu_perbaikan" ? "Perlu perbaikan" : "Pending",
       workflowStage: workflowStageLabels[workflowStage] ? workflowStage : "submitted",
+      workflowUpdatedByRole: String(data.workflowUpdatedByRole || ""),
       coordinatorReviewStatus: data.coordinatorReviewStatus === "Valid" || data.coordinatorReviewStatus === "Perlu perbaikan" ? data.coordinatorReviewStatus : data.coordinatorReviewStatus === "Pending" ? "Pending" : undefined,
       coordinatorReviewNote: String(data.coordinatorReviewNote || ""),
       coordinatorReviewKelengkapan: String(data.coordinatorReviewKelengkapan || ""),
@@ -193,6 +197,8 @@ async function mapSubmissionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Doc
       coordinatorReviewKroscek: String(data.coordinatorReviewKroscek || ""),
       coordinatorReviewerName: String(data.coordinatorReviewerName || ""),
       coordinatorReviewDate: String(data.coordinatorReviewDate || ""),
+      coordinatorReviewerUid: String(data.coordinatorReviewerUid || ""),
+      coordinatorReviewedAt: String(data.coordinatorReviewedAt || ""),
       hotspotCode: String(data.kodeHotspot || ""),
       visitType: data.visitType === "follow_up" ? "follow_up" : "initial",
       visitNumber: Number.isInteger(Number(data.visitNumber)) && Number(data.visitNumber) > 0 ? Number(data.visitNumber) : undefined,
@@ -297,6 +303,7 @@ export default function Home() {
   const [showSupervisionForm, setShowSupervisionForm] = useState(false);
   const [initialSupervisionSubmissionId, setInitialSupervisionSubmissionId] = useState<string | null>(null);
   const [completingSupervisionId, setCompletingSupervisionId] = useState<string | null>(null);
+  const [cancelingSupervisionId, setCancelingSupervisionId] = useState<string | null>(null);
   const [activeDashboardTab, setActiveDashboardTab] = useState<"data" | "progress" | "analytics" | "supervision">("data");
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
   const [selectedSignatureSession, setSelectedSignatureSession] = useState<SupervisionSession | null>(null);
@@ -639,6 +646,36 @@ export default function Home() {
     }
   }
 
+  async function cancelSupervisionSession(session: SupervisionSession) {
+    if (!authUser || session.workflowStatus !== "awaiting_enumerator_signature" || cancelingSupervisionId) return;
+    const confirmed = window.confirm(
+      `Batalkan pengiriman hasil supervisi untuk ${session.enumeratorName || "Enumerator"}? Enumerator tidak bisa menandatangani sesi ini dan data akan dikembalikan ke antrean Koordinator.`,
+    );
+    if (!confirmed) return;
+
+    setCancelingSupervisionId(session.id);
+    setSupervisionError("");
+    try {
+      const token = await authUser.getIdToken();
+      const response = await fetch("/api/supervisions/cancel", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Sesi supervisi gagal dibatalkan.");
+      setSupervisionSessions((sessions) => sessions.map((item) => item.id === session.id
+        ? { ...item, workflowStatus: "cancelled" }
+        : item));
+      setLastUpdated("sekarang");
+      void refreshDashboardSummary(authUser, userProfile);
+    } catch (error) {
+      setSupervisionError(error instanceof Error ? error.message : "Sesi supervisi gagal dibatalkan.");
+    } finally {
+      setCancelingSupervisionId(null);
+    }
+  }
+
   async function reviewQcWithAi(submissionId: string): Promise<AiQcSuggestion> {
     if (!authUser) throw new Error("Sesi login tidak ditemukan.");
     const token = await authUser.getIdToken();
@@ -925,6 +962,7 @@ export default function Home() {
                     {pendingCoordinatorSupervisionSessions.map((session) => <article className="coordinator-supervision-item" key={session.id}>
                       <div><strong>{session.enumeratorName || "Enumerator"} · {session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</strong><small>{session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu Enumerator menandatangani." : `Sesi lama ditandatangani ${session.pengesahanTandaTanganEnumerator?.signerName || "Enumerator"} · ${session.pengesahanTanggalEnumerator || "tanggal tidak tercatat"} dan masih memerlukan penyelarasan.`}</small>{session.pengesahanTandaTanganEnumerator?.fileId && <NextImage className="coordinator-signature-preview" src={`/api/documents/preview?fileId=${encodeURIComponent(session.pengesahanTandaTanganEnumerator.fileId)}`} alt={`Tanda tangan ${session.enumeratorName || "Enumerator"}`} width={460} height={130} unoptimized />}</div>
                       {session.workflowStatus === "awaiting_coordinator_completion" && <button type="button" className="button button-primary" disabled={completingSupervisionId === session.id} onClick={() => void completeSupervisionSession(session)}>{completingSupervisionId === session.id ? "Menyelaraskan..." : "Selesaikan sesi lama"}</button>}
+                      {session.workflowStatus === "awaiting_enumerator_signature" && <button type="button" className="button-link" disabled={cancelingSupervisionId === session.id} onClick={() => void cancelSupervisionSession(session)}>{cancelingSupervisionId === session.id ? "Membatalkan..." : "Batalkan"}</button>}
                     </article>)}
                     {!pendingCoordinatorSupervisionSessions.length && <p className="supervision-history-empty">{supervisionLoading ? "Memuat sesi supervisi..." : "Tidak ada sesi yang menunggu tindakan."}</p>}
                   </section>
@@ -936,7 +974,7 @@ export default function Home() {
                         <td>{session.enumeratorName || "—"}</td>
                         <td>{session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</td>
                         <td>{session.kesimpulanSupervisi === "valid" ? "Lolos supervisi" : session.kesimpulanSupervisi === "needs_revision" ? "Perlu perbaikan" : "Perlu tindak lanjut"}</td>
-                        <td>{session.workflowStatus === "completed" ? "Selesai" : session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu tanda tangan Enumerator" : session.workflowStatus === "awaiting_coordinator_completion" ? "Sesi lama menunggu penyelarasan" : session.workflowStatus || "—"}</td>
+                        <td>{session.workflowStatus === "completed" ? "Selesai" : session.workflowStatus === "cancelled" ? "Dibatalkan Koordinator" : session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu tanda tangan Enumerator" : session.workflowStatus === "awaiting_coordinator_completion" ? "Sesi lama menunggu penyelarasan" : session.workflowStatus || "—"}</td>
                       </tr>)}
                       {!supervisionHistory.length && <tr><td colSpan={5} className="empty-state">{supervisionLoading ? "Memuat riwayat supervisi..." : supervisionError ? "Riwayat supervisi tidak dapat dimuat." : "Belum ada riwayat supervisi."}</td></tr>}
                     </tbody></table></div>
@@ -1615,6 +1653,20 @@ function CoordinatorSupervisionForm({ open, initialSubmissionId, user, profile, 
         coordinatorUid: user.uid,
         enumeratorUid: selectedEnumerator,
         submissionIds,
+        previousSubmissionStates: selectedRows.map((row) => ({
+          submissionId: row.id,
+          workflowStage: row.workflowStage,
+          workflowUpdatedByRole: row.workflowUpdatedByRole || "",
+          coordinatorReviewStatus: row.coordinatorReviewStatus ?? null,
+          coordinatorReviewNote: row.coordinatorReviewNote || "",
+          coordinatorReviewKelengkapan: row.coordinatorReviewKelengkapan || "",
+          coordinatorReviewDuplikasi: row.coordinatorReviewDuplikasi || "",
+          coordinatorReviewKroscek: row.coordinatorReviewKroscek || "",
+          coordinatorReviewerName: row.coordinatorReviewerName || "",
+          coordinatorReviewDate: row.coordinatorReviewDate || "",
+          coordinatorReviewerUid: row.coordinatorReviewerUid || "",
+          coordinatorReviewedAt: row.coordinatorReviewedAt || "",
+        })),
         hotspotNames: selectedRows.map((row) => row.name),
         workflowStage: "coordinator_review",
         workflowStatus: "awaiting_enumerator_signature",
