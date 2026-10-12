@@ -256,6 +256,7 @@ function mapSupervisionSnapshot(snapshot: { docs: QueryDocumentSnapshot<Document
       perbaikanYangDibutuhkan: String(data.perbaikanYangDibutuhkan || ""),
       tindakLanjut: String(data.tindakLanjut || ""),
       reviewDate: String(data.pengesahanTanggalKoordinator || ""),
+      createdAt: String(data.createdAt || ""),
       pengesahanTanggalEnumerator: String(data.pengesahanTanggalEnumerator || ""),
       pengesahanTanggalKoordinator: String(data.pengesahanTanggalKoordinator || ""),
       ...(enumeratorSignature?.fileId ? { pengesahanTandaTanganEnumerator: enumeratorSignature } : {}),
@@ -855,7 +856,7 @@ export default function Home() {
                     "Buka tab Supervisi, klik Buat supervisi, pilih enumerator, dan centang hotspot yang diperiksa pada sesi ini.",
                     "Isi semua checklist, temuan, kendala, dan tindak lanjut.",
                     "Pilih kesimpulan: Lolos meneruskan data ke Data Analis; Pending mempertahankannya di antrean Koordinator; Perlu perbaikan mengirimnya ke tindak lanjut.",
-                    "Simpan draft. Enumerator menandatangani melalui akunnya sendiri; setelah itu, pilih Selesaikan supervisi pada antrean Koordinator.",
+                    "Simpan hasil supervisi. Setelah Enumerator menandatangani, sistem otomatis menerapkan kesimpulan tanpa penyelesaian manual Koordinator.",
                   ]
                 : [
                     "Buka hotspot berstatus Pemeriksaan Data Analis, lalu periksa detail isian dan dokumen pendukung.",
@@ -866,7 +867,7 @@ export default function Home() {
               ).map((step) => <li key={step}>{step}</li>)}
             </ol>
             <strong>{isCoordinator
-              ? "Perubahan status hotspot diterapkan setelah Enumerator menandatangani dan Koordinator menyelesaikan sesi."
+              ? "Perubahan status hotspot diterapkan otomatis saat Enumerator menandatangani hasil supervisi."
               : "Pemeriksaan dilakukan per hotspot yang sudah lolos supervisi Koordinator."}</strong>
           </div>
         </details>}
@@ -920,10 +921,10 @@ export default function Home() {
                   <div className="panel supervision-dashboard-heading"><div><p className="eyebrow">Supervisi lapangan</p><h2>Kelola dan pantau sesi supervisi</h2><p>Buat sesi supervisi baru atau lihat riwayat sesi yang pernah dibuat.</p></div><button type="button" className="button button-primary" onClick={() => { setInitialSupervisionSubmissionId(null); setShowSupervisionForm(true); }}>＋ Buat supervisi</button></div>
                   {supervisionError && <p className="dashboard-summary-error" role="alert">{supervisionError}</p>}
                   <section className="panel coordinator-supervision-queue">
-                    <div><p className="eyebrow">Antrean supervisi</p><h2>Menunggu tanda tangan atau penyelesaian</h2></div>
+                    <div><p className="eyebrow">Antrean supervisi</p><h2>Menunggu tanda tangan Enumerator</h2></div>
                     {pendingCoordinatorSupervisionSessions.map((session) => <article className="coordinator-supervision-item" key={session.id}>
-                      <div><strong>{session.enumeratorName || "Enumerator"} · {session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</strong><small>{session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu Enumerator menandatangani." : `Ditandatangani ${session.pengesahanTandaTanganEnumerator?.signerName || "Enumerator"} · ${session.pengesahanTanggalEnumerator || "tanggal tidak tercatat"}; sesi siap diselesaikan.`}</small>{session.pengesahanTandaTanganEnumerator?.fileId && <NextImage className="coordinator-signature-preview" src={`/api/documents/preview?fileId=${encodeURIComponent(session.pengesahanTandaTanganEnumerator.fileId)}`} alt={`Tanda tangan ${session.enumeratorName || "Enumerator"}`} width={460} height={130} unoptimized />}</div>
-                      <button type="button" className="button button-primary" disabled={session.workflowStatus !== "awaiting_coordinator_completion" || completingSupervisionId === session.id} onClick={() => void completeSupervisionSession(session)}>{completingSupervisionId === session.id ? "Menyelesaikan..." : "Selesaikan supervisi"}</button>
+                      <div><strong>{session.enumeratorName || "Enumerator"} · {session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</strong><small>{session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu Enumerator menandatangani." : `Sesi lama ditandatangani ${session.pengesahanTandaTanganEnumerator?.signerName || "Enumerator"} · ${session.pengesahanTanggalEnumerator || "tanggal tidak tercatat"} dan masih memerlukan penyelarasan.`}</small>{session.pengesahanTandaTanganEnumerator?.fileId && <NextImage className="coordinator-signature-preview" src={`/api/documents/preview?fileId=${encodeURIComponent(session.pengesahanTandaTanganEnumerator.fileId)}`} alt={`Tanda tangan ${session.enumeratorName || "Enumerator"}`} width={460} height={130} unoptimized />}</div>
+                      {session.workflowStatus === "awaiting_coordinator_completion" && <button type="button" className="button button-primary" disabled={completingSupervisionId === session.id} onClick={() => void completeSupervisionSession(session)}>{completingSupervisionId === session.id ? "Menyelaraskan..." : "Selesaikan sesi lama"}</button>}
                     </article>)}
                     {!pendingCoordinatorSupervisionSessions.length && <p className="supervision-history-empty">{supervisionLoading ? "Memuat sesi supervisi..." : "Tidak ada sesi yang menunggu tindakan."}</p>}
                   </section>
@@ -935,7 +936,7 @@ export default function Home() {
                         <td>{session.enumeratorName || "—"}</td>
                         <td>{session.hotspotNames.join(", ") || `${session.submissionIds.length} hotspot`}</td>
                         <td>{session.kesimpulanSupervisi === "valid" ? "Lolos supervisi" : session.kesimpulanSupervisi === "needs_revision" ? "Perlu perbaikan" : "Perlu tindak lanjut"}</td>
-                        <td>{session.workflowStatus === "completed" ? "Selesai" : session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu tanda tangan Enumerator" : session.workflowStatus === "awaiting_coordinator_completion" ? "Siap diselesaikan Koordinator" : session.workflowStatus || "—"}</td>
+                        <td>{session.workflowStatus === "completed" ? "Selesai" : session.workflowStatus === "awaiting_enumerator_signature" ? "Menunggu tanda tangan Enumerator" : session.workflowStatus === "awaiting_coordinator_completion" ? "Sesi lama menunggu penyelarasan" : session.workflowStatus || "—"}</td>
                       </tr>)}
                       {!supervisionHistory.length && <tr><td colSpan={5} className="empty-state">{supervisionLoading ? "Memuat riwayat supervisi..." : supervisionError ? "Riwayat supervisi tidak dapat dimuat." : "Belum ada riwayat supervisi."}</td></tr>}
                     </tbody></table></div>
@@ -958,7 +959,30 @@ export default function Home() {
             loadingMore={loadingMoreSubmissions}
             onLoadMore={() => void loadMoreSubmissions()}
             deletingHotspotId={deletingHotspotId}
-            onView={(hotspot) => { setSelectedHotspot(hotspot); setShowQcModal(false); }}
+            onView={(hotspot) => {
+              const relatedSessions = supervisionSessions
+                .filter((session) => session.submissionIds.includes(hotspot.id))
+                .sort((first, second) => Date.parse(second.createdAt || "") - Date.parse(first.createdAt || ""));
+              const latestSession = relatedSessions[0];
+              const finalizedCoordinatorStatus = latestSession
+                ? latestSession.kesimpulanSupervisi === "valid"
+                  ? "Valid"
+                  : latestSession.kesimpulanSupervisi === "needs_revision" ? "Perlu perbaikan" : "Pending"
+                : undefined;
+              setSelectedHotspot({
+                ...hotspot,
+                ...(latestSession ? {
+                  coordinatorReviewStatus: finalizedCoordinatorStatus || hotspot.coordinatorReviewStatus,
+                  coordinatorReviewNote: hotspot.coordinatorReviewNote || latestSession.coordinatorReviewNote,
+                  coordinatorReviewKelengkapan: hotspot.coordinatorReviewKelengkapan || latestSession.checks.kualitas_1 || "",
+                  coordinatorReviewDuplikasi: hotspot.coordinatorReviewDuplikasi || latestSession.checks.kualitas_3 || "",
+                  coordinatorReviewKroscek: hotspot.coordinatorReviewKroscek || latestSession.checks.kualitas_4 || "",
+                  coordinatorReviewerName: hotspot.coordinatorReviewerName || latestSession.coordinatorName,
+                  coordinatorReviewDate: hotspot.coordinatorReviewDate || latestSession.reviewDate,
+                } : {}),
+              });
+              setShowQcModal(false);
+            }}
             onRevise={(hotspot) => { setRevisionSubmission(hotspot); setShowEnumeratorForm(true); }}
             onDelete={(hotspot) => void removeHotspotData(hotspot)}
           />
@@ -1253,6 +1277,7 @@ type SupervisionSession = {
   perbaikanYangDibutuhkan: string;
   tindakLanjut: string;
   reviewDate: string;
+  createdAt?: string;
   pengesahanTanggalEnumerator: string;
   pengesahanTanggalKoordinator: string;
   pengesahanTandaTanganEnumerator?: StoredSupervisionSignature;
@@ -1606,6 +1631,9 @@ function CoordinatorSupervisionForm({ open, initialSubmissionId, user, profile, 
         batch.update(doc(db, "submissions", submission.id), {
           coordinatorReviewStatus: "Pending",
           coordinatorReviewNote: note,
+          coordinatorReviewKelengkapan: checks.kualitas_1 || "",
+          coordinatorReviewDuplikasi: checks.kualitas_3 || "",
+          coordinatorReviewKroscek: checks.kualitas_4 || "",
           coordinatorReviewerName: String(form.get("namaKoordinator") || "").trim(),
           coordinatorReviewDate: String(form.get("tanggalSupervisi") || ""),
           coordinatorReviewerUid: user.uid,
@@ -1983,6 +2011,8 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
         });
         if (revisedDocuments.length < 2) throw new Error("Dua foto dokumentasi harus tersedia. Pilih foto pengganti yang belum tersimpan.");
         const revisedAt = new Date().toISOString();
+        const returnedByAnalyst = revision.coordinatorReviewStatus === "Valid" && revision.qc === "Perlu perbaikan";
+        const revisionStage: WorkflowStage = returnedByAnalyst ? "analyst_review" : "coordinator_review";
         await updateDoc(doc(db, "submissions", revision.id), {
           namaHotspot: String(form.get("namaHotspot") || "").trim(),
           kecamatan: String(form.get("kecamatan") || "").trim(),
@@ -2005,16 +2035,18 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
           kondisiSaatPemetaan: String(form.get("kondisiSaatPemetaan") || "").trim(),
           document: revisedDocuments[0],
           documents: revisedDocuments,
-          coordinatorReviewStatus: "Pending",
-          workflowStage: "coordinator_review",
+          ...(returnedByAnalyst ? { qcStatus: "pending" } : { coordinatorReviewStatus: "Pending" }),
+          workflowStage: revisionStage,
           workflowUpdatedByRole: "enumerator",
           workflowHistory: arrayUnion({
-            stage: "coordinator_review",
+            stage: revisionStage,
             role: "enumerator",
             uid: user.uid,
             actorName: profile?.nama || user.displayName || "",
             at: revisedAt,
-            note: "Enumerator mengirim revisi untuk ditinjau kembali oleh Koordinator.",
+            note: returnedByAnalyst
+              ? "Enumerator mengirim revisi untuk diperiksa kembali oleh Data Analis."
+              : "Enumerator mengirim revisi untuk ditinjau kembali oleh Koordinator.",
           }),
         });
         onSaved();

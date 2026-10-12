@@ -76,6 +76,20 @@ export async function POST(request: Request) {
         throw new Error("SUPERVISION_SUBMISSIONS_INVALID");
       }
 
+      const decision = sessionData.kesimpulanSupervisi;
+      if (decision !== "valid" && decision !== "pending" && decision !== "needs_revision") {
+        throw new Error("SUPERVISION_DECISION_INVALID");
+      }
+      const workflowStage = decision === "valid"
+        ? "analyst_review"
+        : decision === "needs_revision" ? "needs_revision" : "coordinator_review";
+      const coordinatorReviewStatus = decision === "valid"
+        ? "Valid"
+        : decision === "needs_revision" ? "Perlu perbaikan" : "Pending";
+      const checks = isRecord(sessionData.checks) ? sessionData.checks : {};
+      const coordinatorName = String(sessionData.namaKoordinator || "");
+      const coordinatorReviewNote = String(sessionData.coordinatorReviewNote || "");
+      const coordinatorReviewDate = String(sessionData.pengesahanTanggalKoordinator || "");
       const submissionRefs = submissionIds.map((id: string) => adminDb.collection("submissions").doc(id));
       const submissions = await transaction.getAll(...submissionRefs);
       for (const submission of submissions) {
@@ -97,7 +111,8 @@ export async function POST(request: Request) {
           signerName,
           signedAt,
         },
-        workflowStatus: "awaiting_coordinator_completion",
+        workflowStatus: "completed",
+        completedAt: signedAt,
       });
       submissions.forEach((submission, index) => {
         const currentStage = String(submission.get("workflowStage") || "submitted");
@@ -112,17 +127,34 @@ export async function POST(request: Request) {
               note: "Hasil supervisi dikirim kepada Enumerator untuk ditandatangani.",
             }];
         transaction.update(submissionRefs[index], {
-          workflowStage: "awaiting_coordinator_completion",
-          workflowUpdatedByRole: "enumerator",
+          coordinatorReviewStatus,
+          coordinatorReviewNote,
+          coordinatorReviewKelengkapan: String(checks.kualitas_1 || ""),
+          coordinatorReviewDuplikasi: String(checks.kualitas_3 || ""),
+          coordinatorReviewKroscek: String(checks.kualitas_4 || ""),
+          coordinatorReviewerName: coordinatorName,
+          coordinatorReviewDate,
+          coordinatorReviewerUid: String(sessionData.coordinatorUid || ""),
+          coordinatorReviewedAt: signedAt,
+          workflowStage,
+          workflowUpdatedByRole: "koordinator",
           workflowHistory: FieldValue.arrayUnion(
             ...history,
             {
-              stage: "awaiting_coordinator_completion",
+              stage: "awaiting_enumerator_signature",
               role: "enumerator",
               uid,
               actorName: signerName,
               at: signedAt,
               note: "Enumerator telah menandatangani hasil supervisi.",
+            },
+            {
+              stage: workflowStage,
+              role: "koordinator",
+              uid: String(sessionData.coordinatorUid || ""),
+              actorName: coordinatorName,
+              at: signedAt,
+              note: coordinatorReviewNote,
             },
           ),
         });
@@ -137,6 +169,7 @@ export async function POST(request: Request) {
       SUPERVISION_NOT_ASSIGNED: "Sesi supervisi ini bukan untuk akun Enumerator Anda.",
       SUPERVISION_NOT_AWAITING_SIGNATURE: "Sesi supervisi ini sudah tidak menunggu tanda tangan.",
       SUPERVISION_SUBMISSIONS_INVALID: "Daftar hotspot dalam sesi supervisi tidak valid.",
+      SUPERVISION_DECISION_INVALID: "Kesimpulan supervisi tidak valid. Hubungi Koordinator.",
       SUPERVISION_SUBMISSION_NOT_FOUND: "Salah satu data hotspot dalam sesi tidak ditemukan.",
       SUPERVISION_SUBMISSION_NOT_ASSIGNED: "Salah satu hotspot bukan milik akun Enumerator Anda.",
       SUPERVISION_SUBMISSION_STAGE_INVALID: "Tahap salah satu hotspot sudah berubah. Muat ulang dashboard sebelum mencoba lagi.",
