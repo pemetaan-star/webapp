@@ -11,6 +11,7 @@ import { EnumeratorAiAssistant } from "@/app/components/enumerator-ai-assistant"
 import { EnumeratorFormFields, normalizeOrganization, organizationOptions } from "@/app/components/enumerator-form";
 import { DashboardOverview } from "@/app/components/dashboard-overview";
 import { DashboardAnalytics } from "@/app/components/dashboard-analytics";
+import { FinalDataExport } from "@/app/components/final-data-export";
 import { EnumeratorProgress } from "@/app/components/enumerator-progress";
 import { displayPopulation, ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
 import { canReviewWorkflowStage, normalizeWorkflowStage, type DashboardSummary, type WorkflowStage } from "@/lib/dashboard-summary";
@@ -951,6 +952,7 @@ export default function Home() {
               : activeDashboardTab === "analytics"
                 ? <>
                   <section className="kpi-grid" aria-label="Ringkasan data"><Kpi tone="blue" label={isEnumerator ? "DATA SAYA TERCATAT" : "TOTAL HOTSPOT TERCATAT"} value={totalHotspots === undefined ? "—" : String(totalHotspots)} note={dashboardSummaryLoading ? "Memuat seluruh data..." : dashboardSummaryError || "Total seluruh data"} icon="▦" /><Kpi tone="teal" label={isEnumerator ? "DATA TERKIRIM" : "HOTSPOT BARU & AKTIF"} value={activeHotspots === undefined ? "—" : String(activeHotspots)} note="Status aktif dan baru" icon="⌁" /><Kpi tone="amber" label={isEnumerator ? "MENUNGGU PEMERIKSAAN" : "PERLU PEMERIKSAAN"} value={pendingQc === undefined ? "—" : String(pendingQc)} note="Menunggu tindak lanjut" icon="!" /><Kpi tone="coral" label="HIV+ / JUMLAH TES" value={hivPositive === undefined ? "—" : String(hivPositive)} suffix={hivTests === undefined ? "" : `/ ${hivTests} Tes`} note="Akumulasi seluruh data" icon="♥" /></section>
+                  <FinalDataExport user={authUser} />
                   <DashboardAnalytics rows={hotspotRows} canLoadMore={submissionCursor !== null} onLoadMore={() => void loadMoreSubmissions()} />
                   <DashboardOverview rows={hotspotRows} totalRows={totalHotspots ?? hotspotRows.length} />
                 </>
@@ -1117,7 +1119,7 @@ function SubmissionTable({
       <tbody>{rows.map((hotspot) => <tr key={hotspot.id}>
         <td>{hotspot.enumeratorName || "Nama belum diatur"}</td><td>{hotspot.date}</td><td><strong>{hotspot.name}</strong></td><td>{hotspot.area}</td>
         <td>{displayPopulation(hotspot.population)}</td><td><span className={`status-badge ${statusClass[hotspot.status]}`}><i />{hotspot.status}</span></td>
-        <td><span className="workflow-badge">{workflowStageLabels[hotspot.workflowStage]}</span></td>
+        <td><span className="workflow-badge" data-stage={hotspot.workflowStage}>{workflowStageLabels[hotspot.workflowStage]}</span></td>
         <td><button className="row-action" onClick={() => onView(hotspot)} aria-label={`Lihat detail ${hotspot.name}`}>→</button>
           {isEnumerator && hotspot.workflowStage === "needs_revision" && <button type="button" className="row-action" onClick={() => onRevise(hotspot)} aria-label={`Perbaiki data ${hotspot.name}`} title="Perbaiki data">Revisi</button>}
           {isAdmin && <button type="button" className="row-action row-action-danger" onClick={() => onDelete(hotspot)} disabled={deletingHotspotId === hotspot.id} aria-label={`Hapus data ${hotspot.name}`}>{deletingHotspotId === hotspot.id ? "…" : "×"}</button>}
