@@ -54,6 +54,21 @@ export async function GET(request: Request) {
     const snapshot = await adminDb.collection("supervisions")
       .where("enumeratorUid", "==", uid)
       .get();
+    const hasRevisionSessions = snapshot.docs.some((document) =>
+      document.get("workflowStatus") === "needs_revision"
+      || document.get("kesimpulanSupervisi") === "needs_revision",
+    );
+    const needsRevisionSubmissionIds = new Set(
+      hasRevisionSessions
+        ? (await adminDb.collection("submissions").where("enumeratorUid", "==", uid).get()).docs
+          .filter((document) =>
+            document.get("workflowStage") === "needs_revision"
+            || document.get("workflowStage") === "awaiting_enumerator_signature"
+            || document.get("workflowStage") === "awaiting_coordinator_completion",
+          )
+          .map((document) => document.id)
+        : [],
+    );
     const sessions = snapshot.docs
       .map((document) => {
         const data = document.data();
@@ -63,7 +78,11 @@ export async function GET(request: Request) {
           enumeratorName: stringOrEmpty(data.pengesahanNamaEnumerator),
           coordinatorUid: stringOrEmpty(data.coordinatorUid),
           coordinatorName: stringOrEmpty(data.namaKoordinator),
-          workflowStatus: stringOrEmpty(data.workflowStatus),
+          workflowStatus: data.kesimpulanSupervisi === "needs_revision"
+            ? "needs_revision"
+            : data.kesimpulanSupervisi === "pending" && data.workflowStatus === "awaiting_enumerator_signature"
+              ? "pending_coordinator_action"
+              : stringOrEmpty(data.workflowStatus),
           submissionIds: stringArray(data.submissionIds),
           hotspotNames: stringArray(data.hotspotNames),
           kesimpulanSupervisi: data.kesimpulanSupervisi === "pending" || data.kesimpulanSupervisi === "needs_revision"
@@ -82,10 +101,27 @@ export async function GET(request: Request) {
           pengesahanTandaTanganKoordinator: signature(data.pengesahanTandaTanganKoordinator),
         };
       })
-      .filter((session) =>
-        session.workflowStatus === "awaiting_enumerator_signature"
-        || session.workflowStatus === "awaiting_coordinator_completion",
-      );
+      .flatMap((session) => {
+        if (
+          session.workflowStatus !== "awaiting_enumerator_signature"
+          && session.workflowStatus !== "awaiting_coordinator_completion"
+          && session.workflowStatus !== "needs_revision"
+          && session.workflowStatus !== "pending_coordinator_action"
+        ) return [];
+        if (session.workflowStatus !== "needs_revision") return [session];
+
+        const activeSubmissionIndices = session.submissionIds
+          .map((id, index) => needsRevisionSubmissionIds.has(id) ? index : -1)
+          .filter((index) => index >= 0);
+        if (!activeSubmissionIndices.length) return [];
+        return [{
+          ...session,
+          submissionIds: activeSubmissionIndices.map((index) => session.submissionIds[index]),
+          hotspotNames: activeSubmissionIndices
+            .map((index) => session.hotspotNames[index])
+            .filter((name): name is string => Boolean(name)),
+        }];
+      });
 
     return Response.json({ sessions }, { headers: { "Cache-Control": "no-store" } });
   } catch {

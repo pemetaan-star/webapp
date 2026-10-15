@@ -374,6 +374,10 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .signature-pending-note p { margin: 6px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.5; }
 .signature-submitted-message { margin: 0; padding: 13px; border: 1px solid #bde3dc; border-radius: 8px; color: #126a60; background: #effaf7; font-size: .76rem; line-height: 1.5; }
 .workflow-badge { display: inline-flex; padding: 4px 7px; border-radius: 6px; color: #245e72; background: #e5f2f5; font-size: .62rem; font-weight: 700; white-space: nowrap; }.workflow-badge[data-stage="submitted"] { color: #46566a; background: #e9eef4; }.workflow-badge[data-stage="coordinator_review"] { color: #126b78; background: #e0f4f5; }.workflow-badge[data-stage="awaiting_enumerator_signature"] { color: #6646a2; background: #efe8fb; }.workflow-badge[data-stage="awaiting_coordinator_completion"] { color: #926000; background: #fff2d3; }.workflow-badge[data-stage="analyst_review"] { color: #205ca2; background: #e5efff; }.workflow-badge[data-stage="finalized"] { color: #08704c; background: #def4e9; }.workflow-badge[data-stage="needs_revision"] { color: #a53832; background: #fde8e5; }
+.table-panel tbody tr[data-workflow-stage="needs_revision"] > td { background: #fff0ee; }
+.table-panel tbody tr[data-follow-up="true"] > td { background: #fff7df; }
+.enumerator-revision-form .visit-picker label select { pointer-events: none; background: #f1f4f7; color: var(--muted); }
+.enumerator-revision-form .visit-picker label:first-child::after { content: "Jenis kunjungan terkunci selama revisi"; color: var(--muted); font-size: .65rem; }
 .supervision-hotspot-select { display: grid; gap: 8px; margin: 0; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
 .supervision-hotspot-select legend { padding: 0 5px; color: var(--ink); font-size: .76rem; font-weight: 700; }
 .supervision-hotspot-select > label { display: flex; grid-template-columns: auto minmax(0, 1fr); align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
@@ -412,8 +416,8 @@ button, input, select { font: inherit; } button { cursor: pointer; }
   .table-footer .button-link { display: inline-flex !important; }
 }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); border: 0; }
-.enumerator-assistant-launcher { position: fixed; right: 24px; bottom: 22px; z-index: 35; display: inline-flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 17px; border: 0; border-radius: 999px; color: white; background: linear-gradient(135deg, #0f9f94, #08776f); box-shadow: 0 8px 24px #0b665d59; font: 700 .78rem var(--font-dm-sans), sans-serif; cursor: pointer; }
-.enumerator-assistant-launcher > span:first-child { font-size: 1.2rem; }
+.enumerator-assistant-launcher { position: fixed; right: 24px; bottom: 22px; z-index: 35; display: inline-grid; width: 50px; height: 50px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: white; background: linear-gradient(135deg, #0f9f94, #08776f); box-shadow: 0 8px 24px #0b665d59; font: 700 1.2rem var(--font-dm-sans), sans-serif; cursor: pointer; }
+.enumerator-assistant-launcher > span:first-child { line-height: 1; }
 .enumerator-assistant-launcher:hover { box-shadow: 0 10px 28px #0b665d70; transform: translateY(-1px); }
 .enumerator-assistant-panel { position: fixed; right: 24px; bottom: 82px; z-index: 35; display: flex; flex-direction: column; width: min(390px, calc(100vw - 32px)); max-height: min(640px, calc(100dvh - 112px)); overflow: hidden; border: 1px solid #dce9eb; border-radius: 17px; background: white; box-shadow: 0 20px 60px #12283b38; }
 .enumerator-assistant-header { display: flex; align-items: center; gap: 10px; padding: 14px 15px; color: white; background: linear-gradient(115deg, #10263e, #1e4853); }
@@ -454,7 +458,7 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .enumerator-assistant-form .button { min-height: 37px; padding: 0 11px; }
 .enumerator-assistant-disclaimer { margin: 0; padding: 3px 12px 10px; color: var(--muted); background: white; font-size: .59rem; line-height: 1.4; }
 @media (max-width: 600px) {
-  .enumerator-assistant-launcher { right: 14px; bottom: 14px; min-height: 44px; padding: 0 14px; }
+  .enumerator-assistant-launcher { right: 14px; bottom: 14px; width: 46px; height: 46px; }
   .enumerator-assistant-panel { right: 8px; bottom: 68px; width: calc(100vw - 16px); max-height: calc(100dvh - 82px); }
 }
 

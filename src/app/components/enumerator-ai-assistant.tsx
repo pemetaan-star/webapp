@@ -64,7 +64,7 @@ const suggestions = [
 
 const welcomeMessage: Message = { role: "assistant", content: "Halo! Saya bisa membantu menjelaskan cara memakai dashboard dan mengisi form Enumerator. Apa yang ingin Anda tanyakan?" };
 
-export function EnumeratorAiAssistant({ user }: { user: User }) {
+export function EnumeratorAiAssistant({ user, hidden = false }: { user: User; hidden?: boolean }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
@@ -196,9 +196,11 @@ export function EnumeratorAiAssistant({ user }: { user: User }) {
     void sendMessage(input);
   }
 
+  if (hidden) return null;
+
   return <>
-    <button type="button" className="enumerator-assistant-launcher" aria-label={open ? "Tutup Asisten AI" : "Buka Asisten AI"} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-      <span aria-hidden="true">{open ? "×" : "✦"}</span><span className="enumerator-assistant-launcher-label">Asisten AI</span>
+    <button type="button" className="enumerator-assistant-launcher" title={open ? "Tutup Asisten AI" : "Buka Asisten AI"} aria-label={open ? "Tutup Asisten AI" : "Buka Asisten AI"} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+      <span aria-hidden="true">{open ? "×" : "✦"}</span>
     </button>
     {open && <section className="enumerator-assistant-panel" role="dialog" aria-modal="false" aria-labelledby="enumerator-assistant-title">
       <header className="enumerator-assistant-header">

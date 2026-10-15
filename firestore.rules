@@ -128,7 +128,11 @@ service cloud.firestore {
         || (isEnumerator()
           && request.resource.data.enumeratorUid == request.auth.uid
           && request.resource.data.createdAt == resource.data.createdAt
-          && resource.data.workflowStage == 'needs_revision'
+          && (
+            resource.data.workflowStage == 'needs_revision'
+            || (resource.data.workflowStage == 'awaiting_enumerator_signature'
+              && resource.data.coordinatorReviewStatus == 'Perlu perbaikan')
+          )
           && validEnumeratorRevision(resource.data, request.resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'namaHotspot', 'kecamatan', 'kelurahan', 'alamat', 'koordinat',
@@ -171,19 +175,36 @@ service cloud.firestore {
         && request.resource.data.coordinatorUid == request.auth.uid
         && request.resource.data.enumeratorUid is string
         && request.resource.data.enumeratorUid.size() > 0
-        && request.resource.data.workflowStage == 'coordinator_review'
-        && request.resource.data.workflowStatus == 'awaiting_enumerator_signature'
+        && (
+          (request.resource.data.kesimpulanSupervisi in ['valid', 'pending']
+            && request.resource.data.workflowStage == 'coordinator_review'
+            && (
+              (request.resource.data.kesimpulanSupervisi == 'valid'
+                && request.resource.data.workflowStatus == 'awaiting_enumerator_signature')
+              || (request.resource.data.kesimpulanSupervisi == 'pending'
+                && request.resource.data.workflowStatus == 'pending_coordinator_action')
+            ))
+          || (request.resource.data.kesimpulanSupervisi == 'needs_revision'
+            && request.resource.data.workflowStage == 'needs_revision'
+            && request.resource.data.workflowStatus == 'needs_revision')
+        )
         && request.resource.data.checks is map
         && request.resource.data.submissionIds is list
         && request.resource.data.submissionIds.size() > 0
         && request.resource.data.submissionIds.size() <= 499
         && request.resource.data.checks.keys().size() == 12
-        && request.resource.data.pengesahanTandaTanganKoordinator.signerUid == request.auth.uid
-        && request.resource.data.pengesahanTandaTanganKoordinator.fileId is string;
+        && (
+          (request.resource.data.kesimpulanSupervisi == 'valid'
+            && request.resource.data.pengesahanTandaTanganKoordinator.signerUid == request.auth.uid
+            && request.resource.data.pengesahanTandaTanganKoordinator.fileId is string)
+          || (request.resource.data.kesimpulanSupervisi in ['pending', 'needs_revision']
+            && !request.resource.data.keys().hasAny(['pengesahanTandaTanganKoordinator']))
+        );
       allow read: if isReviewer() || (signedIn() && resource.data.enumeratorUid == request.auth.uid);
       allow update: if isAdmin()
         || (isEnumerator()
           && resource.data.enumeratorUid == request.auth.uid
+          && resource.data.kesimpulanSupervisi == 'valid'
           && resource.data.workflowStatus == 'awaiting_enumerator_signature'
           && request.resource.data.workflowStatus == 'awaiting_coordinator_completion'
           && request.resource.data.pengesahanEnumeratorHadir == true

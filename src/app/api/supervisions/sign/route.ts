@@ -63,6 +63,7 @@ export async function POST(request: Request) {
       if (!session.exists) throw new Error("SUPERVISION_NOT_FOUND");
       const sessionData = session.data() || {};
       if (sessionData.enumeratorUid !== uid) throw new Error("SUPERVISION_NOT_ASSIGNED");
+      if (sessionData.kesimpulanSupervisi !== "valid") throw new Error("SUPERVISION_DECISION_INVALID");
       if (sessionData.workflowStatus !== "awaiting_enumerator_signature") throw new Error("SUPERVISION_NOT_AWAITING_SIGNATURE");
 
       const submissionIds = sessionData.submissionIds;
@@ -169,7 +170,7 @@ export async function POST(request: Request) {
       SUPERVISION_NOT_ASSIGNED: "Sesi supervisi ini bukan untuk akun Enumerator Anda.",
       SUPERVISION_NOT_AWAITING_SIGNATURE: "Sesi supervisi ini sudah tidak menunggu tanda tangan.",
       SUPERVISION_SUBMISSIONS_INVALID: "Daftar hotspot dalam sesi supervisi tidak valid.",
-      SUPERVISION_DECISION_INVALID: "Kesimpulan supervisi tidak valid. Hubungi Koordinator.",
+      SUPERVISION_DECISION_INVALID: "Kesimpulan ini tidak memerlukan tanda tangan Enumerator.",
       SUPERVISION_SUBMISSION_NOT_FOUND: "Salah satu data hotspot dalam sesi tidak ditemukan.",
       SUPERVISION_SUBMISSION_NOT_ASSIGNED: "Salah satu hotspot bukan milik akun Enumerator Anda.",
       SUPERVISION_SUBMISSION_STAGE_INVALID: "Tahap salah satu hotspot sudah berubah. Muat ulang dashboard sebelum mencoba lagi.",
