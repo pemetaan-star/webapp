@@ -29,15 +29,22 @@ export async function POST(request: Request) {
   const nama = typeof body?.nama === "string" ? body.nama.trim() : "";
   const role = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
   const organisasi = typeof body?.organisasi === "string" ? body.organisasi.trim() : "";
+  const manualGpsEnabled = body?.manualGpsEnabled === true;
   const password = typeof body?.password === "string" ? body.password : "";
 
+  if (body?.manualGpsEnabled !== undefined && typeof body.manualGpsEnabled !== "boolean") {
+    return Response.json({ error: "Pengaturan GPS manual tidak valid." }, { status: 400 });
+  }
+  if (manualGpsEnabled && role !== "enumerator") {
+    return Response.json({ error: "Izin GPS manual hanya berlaku untuk Enumerator." }, { status: 400 });
+  }
   if (!username || !nama || !email.includes("@") || password.length < 6 || !supportedRoles.has(role) || (role === "enumerator" && !supportedOrganizations.has(organisasi))) {
     return Response.json({ error: "Data user tidak valid. Pilih organisasi untuk enumerator dan gunakan password minimal 6 karakter." }, { status: 400 });
   }
 
   try {
     const account = await adminAuth.createUser({ email, password, displayName: nama });
-    const profile = { username, email, nama, role, ...(role === "enumerator" ? { organisasi } : {}) };
+    const profile = { username, email, nama, role, organisasi: role === "enumerator" ? organisasi : "", manualGpsEnabled: role === "enumerator" && manualGpsEnabled };
     try {
       await adminDb.collection("user").doc(account.uid).create(profile);
     } catch (error) {
@@ -69,7 +76,14 @@ export async function PATCH(request: Request) {
   const nama = typeof body?.nama === "string" ? body.nama.trim() : "";
   const role = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
   const organisasi = typeof body?.organisasi === "string" ? body.organisasi.trim() : "";
+  const manualGpsEnabled = body?.manualGpsEnabled === true;
 
+  if (body?.manualGpsEnabled !== undefined && typeof body.manualGpsEnabled !== "boolean") {
+    return Response.json({ error: "Pengaturan GPS manual tidak valid." }, { status: 400 });
+  }
+  if (manualGpsEnabled && role !== "enumerator") {
+    return Response.json({ error: "Izin GPS manual hanya berlaku untuk Enumerator." }, { status: 400 });
+  }
   if (!uid || !username || !nama || !email.includes("@") || !supportedRoles.has(role) || (role === "enumerator" && !supportedOrganizations.has(organisasi))) {
     return Response.json({ error: "Data profil atau role tidak valid." }, { status: 400 });
   }
@@ -89,7 +103,14 @@ export async function PATCH(request: Request) {
     const account = await adminAuth.getUser(uid);
     await adminAuth.updateUser(uid, { email, displayName: nama });
     try {
-      await profileRef.update({ username, email, nama, role, organisasi: role === "enumerator" ? organisasi : "" });
+      await profileRef.update({
+        username,
+        email,
+        nama,
+        role,
+        organisasi: role === "enumerator" ? organisasi : "",
+        manualGpsEnabled: role === "enumerator" && manualGpsEnabled,
+      });
     } catch (error) {
       await adminAuth.updateUser(uid, {
         ...(account.email ? { email: account.email } : {}),

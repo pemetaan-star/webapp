@@ -35,6 +35,7 @@ type Hotspot = {
   previousVisitId?: string;
   verificationStatus?: string;
   coordinates?: string;
+  koordinatManual?: boolean;
   enumeratorName?: string;
   enumeratorUsername?: string;
   enumeratorUid?: string;
@@ -86,6 +87,7 @@ type UserProfile = {
   nama?: string;
   role?: string;
   organisasi?: string;
+  manualGpsEnabled?: boolean;
 };
 
 function normalizeUserProfile(id: string, data: Record<string, unknown>) {
@@ -207,6 +209,7 @@ async function mapSubmissionSnapshot(snapshot: { docs: DocumentSnapshot<Document
       previousVisitId: String(data.previousVisitId || ""),
       verificationStatus: String(data.statusVerifikasi || ""),
       coordinates: String(data.koordinat || ""),
+      koordinatManual: data.koordinatManual === true,
       enumeratorName,
       enumeratorUsername: String(data.enumeratorUsername || ""),
       enumeratorUid,
@@ -815,6 +818,7 @@ export default function Home() {
       nama: String(formData.get("nama") || "").trim(),
       role: String(formData.get("role") || "enumerator").trim(),
       organisasi: String(formData.get("organisasi") || "").trim(),
+      manualGpsEnabled: formData.get("manualGpsEnabled") === "on",
     };
     try {
       const token = await authUser.getIdToken();
@@ -842,6 +846,7 @@ export default function Home() {
       nama: String(formData.get("nama") || "").trim(),
       role: String(formData.get("role") || "enumerator").trim(),
       organisasi: String(formData.get("organisasi") || "").trim(),
+      manualGpsEnabled: formData.get("manualGpsEnabled") === "on",
       password: String(formData.get("password") || ""),
     };
     try {
@@ -1240,6 +1245,7 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
             {creatingUser && <label>Password awal<input name="password" type="password" autoComplete="new-password" minLength={6} required /></label>}
             <label>Role<select name="role" value={currentRole} onChange={(event) => setRoleOverride({ userId: editingUser?.id || null, role: event.target.value })}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="koordinator">Koordinator</option><option value="enumerator">Enumerator</option></select>{storedRole === "supervisor" && <small>Role lama akan dialihkan ke Koordinator sesuai proposal.</small>}</label>
             {(creatingUser || editingUser) && currentRole === "enumerator" && <label>Organisasi Enumerator<select name="organisasi" defaultValue={editingUser?.organisasi || ""} required><option value="">Pilih organisasi</option>{organizationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
+            {currentRole === "enumerator" && <label className="manual-gps-permission"><input name="manualGpsEnabled" type="checkbox" defaultChecked={editingUser?.manualGpsEnabled === true} /> Izinkan input koordinat GPS manual<small>Enumerator ini dapat mengetik lintang dan bujur jika GPS perangkat tidak tersedia.</small></label>}
             {savingUser && <div className="form-saving-indicator form-wide" role="status" aria-live="polite"><span className="form-saving-brand" aria-hidden="true" /><strong>Menyimpan user...</strong><small>{creatingUser ? "Membuat akun dan profil user." : "Memperbarui profil user."}</small><i className="form-saving-track" aria-hidden="true" /></div>}
             <div className="user-modal-actions">
               <button type="button" className="button button-secondary" onClick={() => { setRoleOverride(null); onCancelEdit(); }} disabled={savingUser}>Batal</button>
@@ -1250,13 +1256,14 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
           <div className="user-table-wrap">
             {loading ? <p className="user-empty">Memuat daftar user...</p> : users.length === 0 ? <p className="user-empty">Belum ada profil user.</p> : (
               <table>
-                <thead><tr><th>USERNAME</th><th>NAMA</th><th>EMAIL</th><th>ROLE</th><th>AKSI</th></tr></thead>
+                <thead><tr><th>USERNAME</th><th>NAMA</th><th>EMAIL</th><th>ROLE</th><th>GPS MANUAL</th><th>AKSI</th></tr></thead>
                 <tbody>{users.map((user) => (
                   <tr key={user.id}>
                     <td className="mono">{user.username || "-"}</td>
                     <td><strong>{user.nama || "-"}</strong></td>
                     <td>{user.email || "-"}</td>
                     <td><span className="user-role">{user.role || "-"}</span></td>
+                    <td>{user.role?.toLowerCase() === "enumerator" && user.manualGpsEnabled ? "Aktif" : "-"}</td>
                     <td>
                       <button className="row-action" onClick={() => onEdit(user)} aria-label={`Edit ${user.username || "user"}`}>✎</button>
                       <button className="row-action row-action-danger" onClick={() => onDelete(user)} disabled={user.id === undefined} aria-label={`Hapus ${user.username || "user"}`}>×</button>
@@ -1888,6 +1895,7 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
   const [visitMode, setVisitMode] = useState<"initial" | "follow_up">(revision?.visitType || "initial");
   const [previousHotspotId, setPreviousHotspotId] = useState(revision?.previousVisitId || "");
   const [gps, setGps] = useState(revision?.coordinates || "");
+  const [manualGps, setManualGps] = useState(Boolean(revision?.koordinatManual && profile?.manualGpsEnabled));
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsCandidate, setGpsCandidate] = useState<{ location: string; latitude: string; longitude: string; accuracy: number } | null>(null);
   const [gpsDialogMode, setGpsDialogMode] = useState<"searching" | "result" | null>(null);
@@ -2006,7 +2014,7 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
   const hotspotIdentity = JSON.stringify([hotspotName.trim(), village.trim(), address.trim()]);
   const activeHotspotCode = revision?.hotspotCode || (hotspotCodeIdentity === hotspotIdentity ? hotspotCode : "");
   return <>
-    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={changeVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={(id) => { if (!revision) setPreviousHotspotId(id); }} previousHotspots={previousVisits} previousVisitsLoading={previousVisitsLoading} onSelectPreviousHotspot={(id) => { if (!revision) selectPreviousHotspot(id); }} locationSubtypes={locationSubtypes} revision={revision} />
+    <EnumeratorFormFields user={user} profile={profile} error={error} saving={saving} gps={gps} manualGps={manualGps} onChangeGps={setGps} onManualGpsChange={changeManualGps} onUseCurrentLocation={useCurrentLocation} onClose={onClose} onSubmit={submit} locationType={locationType} setLocationType={setLocationType} locationSubtype={locationSubtype} setLocationSubtype={setLocationSubtype} statusHotspot={statusHotspot} setStatusHotspot={setStatusHotspot} hotspotCode={activeHotspotCode} hotspotCodeLoading={hotspotCodeLoading} hotspotName={hotspotName} setHotspotName={setHotspotName} district={district} setDistrict={setDistrict} village={village} setVillage={setVillage} address={address} setAddress={setAddress} districts={malangKelurahan} visitMode={visitMode} setVisitMode={changeVisitMode} previousHotspotId={previousHotspotId} setPreviousHotspotId={(id) => { if (!revision) setPreviousHotspotId(id); }} previousHotspots={previousVisits} previousVisitsLoading={previousVisitsLoading} onSelectPreviousHotspot={(id) => { if (!revision) selectPreviousHotspot(id); }} locationSubtypes={locationSubtypes} revision={revision} />
     {saving && <FormSubmissionLoading />}
     <GpsConfirmationDialog key={gpsStartedAt} mode={gpsDialogMode} result={gpsCandidate} startedAt={gpsStartedAt} onCancel={cancelGps} onAccept={acceptGps} onRetry={retryGps} />
   </>;
@@ -2070,6 +2078,11 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
     startGpsCapture();
   }
 
+  function changeManualGps(enabled: boolean) {
+    setManualGps(enabled);
+    if (!enabled) setGps("");
+  }
+
   function cancelGps() {
     if (gpsWatchRef.current !== null) navigator.geolocation.clearWatch(gpsWatchRef.current);
     if (gpsTimeoutRef.current !== null) window.clearTimeout(gpsTimeoutRef.current);
@@ -2081,6 +2094,7 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
   function acceptGps() {
     if (!gpsCandidate) return;
     setGps(gpsCandidate.location);
+    setManualGps(false);
     setGpsCandidate(null);
     setGpsDialogMode(null);
   }
@@ -2104,7 +2118,26 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
       return file instanceof File && file.size ? file : null;
     });
     if (!revision && selectedDocuments.slice(0, 2).some((file) => !file)) return setError("Dua foto dokumentasi wajib dipilih.");
-    if (!gps) return setError("Titik koordinat GPS wajib diambil dari perangkat.");
+    if (manualGps && !profile?.manualGpsEnabled) return setError("Input GPS manual tidak diizinkan untuk akun ini.");
+    if (!gps) return setError(manualGps ? "Lintang dan bujur GPS wajib diisi." : "Titik koordinat GPS wajib diambil dari perangkat.");
+    if (manualGps) {
+      const coordinates = gps.split(",").map((part) => part.trim());
+      const [latitudeText, longitudeText] = coordinates;
+      const coordinatePattern = /^-?\d{1,3}(?:\.\d{1,8})?$/;
+      const latitude = Number(latitudeText);
+      const longitude = Number(longitudeText);
+      if (
+        coordinates.length !== 2
+        || !coordinatePattern.test(latitudeText || "")
+        || !coordinatePattern.test(longitudeText || "")
+        || !Number.isFinite(latitude)
+        || !Number.isFinite(longitude)
+        || latitude < -90 || latitude > 90
+        || longitude < -180 || longitude > 180
+      ) {
+        return setError("Koordinat GPS tidak valid. Periksa lintang (-90 sampai 90) dan bujur (-180 sampai 180), maksimal 8 angka desimal.");
+      }
+    }
     const educated = Number(form.get("jumlahDiedukasi") || 0);
     setSaving(true);
     setError("");
@@ -2171,6 +2204,7 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
           kelurahan: String(form.get("kelurahan") || "").trim(),
           alamat: String(form.get("alamat") || "").trim(),
           koordinat: gps,
+          koordinatManual: manualGps,
           statusHotspot: String(form.get("statusHotspot") || "").trim(),
           statusVerifikasi: String(form.get("statusHotspot") || "").trim() === "perlu_verifikasi" ? "perlu_verifikasi" : "terverifikasi_lapangan",
           populasiKunci: form.getAll("populasiKunci"),
@@ -2250,6 +2284,7 @@ function EnumeratorForm({ user, profile, existingHotspots, revision, onClose, on
         kelurahan: String(form.get("kelurahan") || "").trim(),
         alamat: String(form.get("alamat") || "").trim(),
         koordinat: gps,
+        koordinatManual: manualGps,
         statusHotspot: String(form.get("statusHotspot") || "").trim(),
         statusVerifikasi: String(form.get("statusHotspot") || "").trim() === "perlu_verifikasi" ? "perlu_verifikasi" : "terverifikasi_lapangan",
         populasiKunci: form.getAll("populasiKunci"),

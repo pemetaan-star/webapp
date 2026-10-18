@@ -24,6 +24,9 @@ service cloud.firestore {
     function isCoordinator() { return signedIn() && role() == 'koordinator'; }
     function isAnalyst() { return signedIn() && (role() == 'data analis' || role() == 'data analyst'); }
     function isReviewer() { return isAdmin() || isLegacySupervisor() || isCoordinator() || isAnalyst(); }
+    function canUseManualGps() {
+      return hasProfile() && profile().manualGpsEnabled == true;
+    }
 
     function validWorkflowStage(stage) {
       return isAdmin()
@@ -33,6 +36,12 @@ service cloud.firestore {
 
     function validCoordinates(value) {
       return value is string && value.matches('^-?[0-9]{1,2}(\\.[0-9]{1,8})?,[ ]?-?[0-9]{1,3}(\\.[0-9]{1,8})?$');
+    }
+
+    function validManualGps(data) {
+      return !data.keys().hasAny(['koordinatManual'])
+        || (data.koordinatManual is bool
+          && (!data.koordinatManual || canUseManualGps()));
     }
 
     function validCounts(data) {
@@ -45,6 +54,7 @@ service cloud.firestore {
         && data.kecamatan is string && data.kelurahan is string
         && data.alamat is string
         && validCoordinates(data.koordinat)
+        && validManualGps(data)
         && data.statusHotspot in ['aktif', 'baru', 'tidak_aktif', 'perlu_verifikasi']
         && data.statusVerifikasi is string
         && data.populasiKunci is list
@@ -84,6 +94,7 @@ service cloud.firestore {
         && data.qcStatus == 'pending'
         && data.workflowStage == 'submitted'
         && validCoordinates(data.koordinat)
+        && validManualGps(data)
         && validCounts(data);
     }
 
@@ -136,6 +147,7 @@ service cloud.firestore {
           && validEnumeratorRevision(resource.data, request.resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'namaHotspot', 'kecamatan', 'kelurahan', 'alamat', 'koordinat',
+              'koordinatManual',
             'statusHotspot', 'statusVerifikasi', 'populasiKunci', 'tipeLokasi',
             'subTipeLokasi', 'tipeLokasiLainnya', 'waktuAktivitas',
             'estimasiJumlahPopulasi', 'jumlahDiedukasi', 'catatan',

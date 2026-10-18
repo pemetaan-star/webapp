@@ -61,6 +61,16 @@
 .gps-input { display: flex; gap: 8px; margin-top: 7px; }
 .gps-input input { flex: 1; margin-top: 0; background: #f1f5f9; }
 .gps-input button { white-space: nowrap; }
+.gps-entry-label { display: block; margin-bottom: 7px; color: var(--ink); font-size: .76rem; font-weight: 700; }
+.gps-manual-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gps-manual-fields label { display: grid; gap: 6px; color: var(--ink); font-size: .72rem; font-weight: 700; }
+.gps-manual-fields input { width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
+.gps-manual-toggle { display: flex; width: fit-content; align-items: center; gap: 8px; margin-top: 10px; color: var(--ink); font-size: .72rem; font-weight: 600; }
+.gps-manual-toggle input { width: auto; margin: 0; accent-color: var(--teal); }
+.gps-entry > small { display: block; margin-top: 6px; color: var(--muted); font-size: .67rem; }
+.manual-gps-permission { display: grid; grid-template-columns: 18px 1fr; gap: 0 8px; align-items: center; }
+.user-edit-form .manual-gps-permission input { width: auto; margin: 0; padding: 0; accent-color: var(--teal); }
+.manual-gps-permission small { grid-column: 2; margin-top: 3px; color: var(--muted); font-size: .68rem; font-weight: 400; }
 .gps-confirm-dialog { width: min(430px, calc(100% - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 0; border: 0; border-radius: 22px; color: var(--ink); background: transparent; box-shadow: 0 28px 90px #0d1e3352; }
 .gps-confirm-dialog::backdrop { background: #0d1e3370; backdrop-filter: blur(7px); }
 .gps-confirm-card { padding: 28px; background: white; }
