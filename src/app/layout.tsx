@@ -11,7 +11,10 @@ export const metadata: Metadata = {
   title: "Dashboard Pemetaan Hotspot Malang 2026",
   description: "Monitoring dan quality control pemetaan hotspot Kota Malang.",
   icons: {
-    icon: "/icons/lingga-512.png",
+    icon: [
+      { url: "/icons/lingga-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/lingga-512.png", sizes: "512x512", type: "image/png" },
+    ],
     apple: "/icons/lingga-180.png",
   },
 };
