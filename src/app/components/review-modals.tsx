@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 
 type ReviewHotspot = {
   id: string;
@@ -201,10 +202,71 @@ function displayReviewValue(label: string, value?: string) {
   return formatStoredLabel(value);
 }
 
+function FullscreenPhotoPreview({ image, historyKey, onClose }: {
+  image: { url: string; alt: string };
+  historyKey: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.history.state?.linggaPhotoPreview !== historyKey) onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [historyKey, onClose]);
+
+  return createPortal(
+    <div
+      className="photo-fullscreen"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Pratinjau foto dokumentasi"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="photo-fullscreen-toolbar">
+        <span>{image.alt}</span>
+        <button type="button" className="photo-fullscreen-close" onClick={onClose} aria-label="Tutup foto">Tutup ×</button>
+      </div>
+      <div className="photo-fullscreen-image">
+        <Image src={image.url} alt={image.alt} fill sizes="100vw" unoptimized />
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function ReviewDetailModal({ hotspot, canReview, canSupervise, onClose, onReview, onSupervise }: { hotspot: ReviewHotspot; canReview: boolean; canSupervise: boolean; onClose: () => void; onReview: () => void; onSupervise: () => void }) {
+  const [previewImage, setPreviewImage] = useState<{ url: string; alt: string; historyKey: string } | null>(null);
   const documents = hotspot.documents?.length ? hotspot.documents : hotspot.documentName ? [{ name: hotspot.documentName, fileId: hotspot.documentFileId }] : [];
   const qcValues: Array<[string, string | undefined]> = [["Tahapan proses", hotspot.workflowStage], ["Hasil supervisi Koordinator", hotspot.coordinatorReviewStatus], ["Kelengkapan instrumen", hotspot.coordinatorReviewKelengkapan], ["Duplikasi (supervisi)", hotspot.coordinatorReviewDuplikasi], ["Validasi lokasi / kroscek", hotspot.coordinatorReviewKroscek], ["Pemeriksa Koordinator", hotspot.coordinatorReviewerName], ["Tanggal supervisi", hotspot.coordinatorReviewDate], ["Catatan Koordinator", hotspot.coordinatorReviewNote], ["Status pemeriksaan Analis", hotspot.qc], ["Kelengkapan (Analis)", hotspot.qcKelengkapan], ["Duplikasi (Analis)", hotspot.qcDuplikasi], ["Kroscek (Analis)", hotspot.qcKroscek], ["Pemeriksa Analis", hotspot.qcInspector], ["Tanggal pemeriksaan Analis", hotspot.qcDate]];
-  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title"><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">x</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Kode Hotspot" value={hotspot.hotspotCode} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={displayPopulation(hotspot.population)} /><DetailItem label="Tipe lokasi" value={[displayLocation(hotspot.locationType, locationTypeLabels), displayLocation(hotspot.locationSubtype, locationSubtypeLabels)].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /></div><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={displayLocation(hotspot.informationSource, informationSourceLabels)} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen pendukung</p>{documents.length ? <div className="document-preview-grid">{documents.map((document, index) => { const previewUrl = document.fileId ? `/api/documents/preview?fileId=${encodeURIComponent(document.fileId)}` : ""; const documentUrl = previewUrl || document.url; const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(document.name); return <div className="document-preview-card" key={`${document.fileId || document.url || document.name}-${index}`}><p className="document-preview-title">Dokumentasi {index + 1}</p>{isImage && documentUrl ? <a className="document-preview" href={documentUrl} target="_blank" rel="noreferrer"><Image src={documentUrl} alt={`Dokumentasi ${index + 1} - ${hotspot.name}`} width={800} height={600} unoptimized /></a> : documentUrl ? <a className="document-file-link" href={documentUrl} target="_blank" rel="noreferrer">Buka dokumen</a> : <p className="document-file-unavailable">Pratinjau tidak tersedia</p>}</div>; })}</div> : <DetailItem label="Dokumentasi" value="Tidak ada dokumen" />}</div><div className="detail-section"><p className="form-section-title">Riwayat tahapan dan pemeriksaan</p><WorkflowTimeline hotspot={hotspot} /></div><div className="detail-section qc-result-section"><p className="form-section-title">Hasil supervisi dan pemeriksaan kualitas</p><div className="detail-grid">{qcValues.map(([label, value]) => <DetailItem key={label} label={label} value={displayReviewValue(label, value)} />)}</div><DetailItem label="Catatan pemeriksaan Data Analis" value={hotspot.qcNote} wide /></div>{(canSupervise || canReview) && <div className="user-modal-actions">{canSupervise && <button type="button" className="button button-primary" onClick={onSupervise}>Mulai supervisi</button>}{canReview && <button type="button" className="button button-primary" onClick={onReview}>Buka tugas tahap ini</button>}</div>}</section></div>;
+  const handleDetailClick = (event: MouseEvent<HTMLElement>) => {
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>(".document-preview") : null;
+    if (!link) return;
+    event.preventDefault();
+    const image = link.querySelector("img");
+    if (!image) return;
+    const historyKey = `lingga-photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.history.pushState({ ...window.history.state, linggaPhotoPreview: historyKey }, "", window.location.href);
+    setPreviewImage({ url: link.href, alt: image.alt, historyKey });
+  };
+  const closePhotoPreview = () => {
+    const historyKey = previewImage?.historyKey;
+    if (historyKey && window.history.state?.linggaPhotoPreview === historyKey) {
+      window.history.back();
+      return;
+    }
+    setPreviewImage(null);
+  };
+  return <div className="user-modal-backdrop"><section className="user-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title" onClick={handleDetailClick}><div className="user-modal-header"><div><p className="eyebrow">Detail pendataan</p><h2 id="detail-modal-title">{hotspot.name}</h2><p>{hotspot.id} · {hotspot.area}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">x</button></div><div className="detail-section"><p className="form-section-title">Informasi pendataan</p><div className="detail-grid"><DetailItem label="Enumerator" value={hotspot.enumeratorName || hotspot.enumeratorUsername} /><DetailItem label="Kode Hotspot" value={hotspot.hotspotCode} /><DetailItem label="Organisasi" value={hotspot.organisasi} /><DetailItem label="Status hotspot" value={hotspot.status} /><DetailItem label="Koordinat GPS" value={hotspot.coordinates} /><DetailItem label="Kecamatan / Kelurahan" value={hotspot.area} /><DetailItem label="Alamat" value={hotspot.address} /><DetailItem label="Populasi kunci" value={displayPopulation(hotspot.population)} /><DetailItem label="Tipe lokasi" value={[displayLocation(hotspot.locationType, locationTypeLabels), displayLocation(hotspot.locationSubtype, locationSubtypeLabels)].filter(Boolean).join(" / ")} /><DetailItem label="Waktu aktivitas" value={hotspot.activityTime} /><DetailItem label="Estimasi populasi" value={String(hotspot.populationEstimate || 0)} /><DetailItem label="Jumlah diedukasi" value={String(hotspot.educated || 0)} /></div><DetailItem label="Keterangan Informan" value={hotspot.activityDescription} wide /><DetailItem label="Kondisi saat pemetaan" value={hotspot.mappingCondition} wide /><DetailItem label="Sumber informasi" value={displayLocation(hotspot.informationSource, informationSourceLabels)} /><DetailItem label="Nomor HP informan" value={hotspot.informantPhone} /><DetailItem label="Catatan Enumerator" value={hotspot.notes} wide /></div><div className="detail-section"><p className="form-section-title">Dokumen pendukung</p>{documents.length ? <div className="document-preview-grid">{documents.map((document, index) => { const previewUrl = document.fileId ? `/api/documents/preview?fileId=${encodeURIComponent(document.fileId)}` : ""; const documentUrl = previewUrl || document.url; const isImage = /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(document.name); return <div className="document-preview-card" key={`${document.fileId || document.url || document.name}-${index}`}><p className="document-preview-title">Dokumentasi {index + 1}</p>{isImage && documentUrl ? <a className="document-preview" href={documentUrl} target="_blank" rel="noreferrer"><Image src={documentUrl} alt={`Dokumentasi ${index + 1} - ${hotspot.name}`} width={800} height={600} unoptimized /></a> : documentUrl ? <a className="document-file-link" href={documentUrl} target="_blank" rel="noreferrer">Buka dokumen</a> : <p className="document-file-unavailable">Pratinjau tidak tersedia</p>}</div>; })}</div> : <DetailItem label="Dokumentasi" value="Tidak ada dokumen" />}</div><div className="detail-section"><p className="form-section-title">Riwayat tahapan dan pemeriksaan</p><WorkflowTimeline hotspot={hotspot} /></div><div className="detail-section qc-result-section"><p className="form-section-title">Hasil supervisi dan pemeriksaan kualitas</p><div className="detail-grid">{qcValues.map(([label, value]) => <DetailItem key={label} label={label} value={displayReviewValue(label, value)} />)}</div><DetailItem label="Catatan pemeriksaan Data Analis" value={hotspot.qcNote} wide /></div>{(canSupervise || canReview) && <div className="user-modal-actions">{canSupervise && <button type="button" className="button button-primary" onClick={onSupervise}>Mulai supervisi</button>}{canReview && <button type="button" className="button button-primary" onClick={onReview}>Buka tugas tahap ini</button>}</div>}</section>{previewImage && <FullscreenPhotoPreview image={previewImage} historyKey={previewImage.historyKey} onClose={closePhotoPreview} />}</div>;
 }
 
 export function ReviewQcModal({ hotspot, reviewerRole, onClose, onSave, onAiReview, reviewerName }: { hotspot: ReviewHotspot; reviewerRole: "coordinator" | "analyst"; onClose: () => void; onSave: (payload: QcPayload) => Promise<void>; onAiReview: (submissionId: string) => Promise<AiQcSuggestion>; reviewerName: string }) {

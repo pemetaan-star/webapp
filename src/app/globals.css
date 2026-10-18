@@ -533,6 +533,12 @@ button, input, select { font: inherit; } button { cursor: pointer; }
 .login-submit:hover .login-submit-arrow { transform: translateX(2px); }
 .login-error { margin: 4px 0 0; border-radius: 10px; }
 .login-footer { display: flex; align-items: center; gap: 9px; margin: 36px 0 0; padding-top: 20px; border-top: 1px solid #edf0f2; color: #526276; font-size: .61rem; text-align: left; }
+.photo-fullscreen { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); color: white; background: #05070b; }
+.photo-fullscreen-toolbar { display: flex; min-height: 56px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 16px; background: #10151d; }
+.photo-fullscreen-toolbar span { overflow: hidden; font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
+.photo-fullscreen-close { min-height: 40px; flex: 0 0 auto; padding: 0 14px; border: 1px solid #ffffff42; border-radius: 8px; color: white; background: #ffffff18; font-size: .8rem; font-weight: 700; }
+.photo-fullscreen-image { position: relative; width: 100%; min-height: 0; flex: 1 1 auto; }
+.photo-fullscreen-image img { object-fit: contain; }
 .login-footer-mark { display: grid; width: 29px; height: 29px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: white; background: #152f47; font: 700 .8rem var(--font-space-grotesk), sans-serif; }
 .login-footer > span:nth-child(2) { display: grid; gap: 2px; font-weight: 700; }
 .login-footer small { color: #8995a2; font-size: .54rem; font-weight: 500; }
