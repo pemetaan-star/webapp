@@ -820,12 +820,13 @@ export default function Home() {
       organisasi: String(formData.get("organisasi") || "").trim(),
       manualGpsEnabled: formData.get("manualGpsEnabled") === "on",
     };
+    const newPassword = String(formData.get("newPassword") || "");
     try {
       const token = await authUser.getIdToken();
       const response = await fetch("/api/admin/users", {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: editingUser.id, ...profile }),
+        body: JSON.stringify({ uid: editingUser.id, ...profile, ...(newPassword ? { password: newPassword } : {}) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Profil user gagal disimpan.");
@@ -1243,6 +1244,7 @@ function UserManagementModal({ users, loading, error, editingUser, creatingUser,
             <label>Email<input name="email" type="email" defaultValue={editingUser?.email || ""} required /></label>
             <label>Nama<input name="nama" defaultValue={editingUser?.nama || ""} required /></label>
             {creatingUser && <label>Password awal<input name="password" type="password" autoComplete="new-password" minLength={6} required /></label>}
+            {editingUser && <label>Sandi baru (opsional)<input name="newPassword" type="password" autoComplete="new-password" minLength={6} /><small>Kosongkan jika tidak ingin mengubah sandi. Minimal 6 karakter.</small></label>}
             <label>Role<select name="role" value={currentRole} onChange={(event) => setRoleOverride({ userId: editingUser?.id || null, role: event.target.value })}><option value="admin">Admin</option><option value="data analis">Data Analis</option><option value="koordinator">Koordinator</option><option value="enumerator">Enumerator</option></select>{storedRole === "supervisor" && <small>Role lama akan dialihkan ke Koordinator sesuai proposal.</small>}</label>
             {(creatingUser || editingUser) && currentRole === "enumerator" && <label>Organisasi Enumerator<select name="organisasi" defaultValue={editingUser?.organisasi || ""} required><option value="">Pilih organisasi</option>{organizationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
             {currentRole === "enumerator" && <label className="manual-gps-permission"><input name="manualGpsEnabled" type="checkbox" defaultChecked={editingUser?.manualGpsEnabled === true} /> Izinkan input koordinat GPS manual<small>Enumerator ini dapat mengetik lintang dan bujur jika GPS perangkat tidak tersedia.</small></label>}

@@ -6,6 +6,7 @@ Arsitektur migrasi saat ini:
 
 - Next.js menangani UI, Firebase Authentication, Firestore, dashboard berdasarkan role, form Enumerator, dan workflow QC.
 - Admin dapat mengaktifkan input koordinat GPS manual per akun Enumerator melalui Manajemen User; tanpa izin tersebut, koordinat hanya dapat diambil dari perangkat.
+- Admin dapat mengubah sandi akun melalui form edit user; sandi hanya diperbarui di Firebase Authentication dan tidak disimpan di Firestore. Kosongkan kolom sandi baru untuk mempertahankan sandi saat ini.
 - Firestore collection `user` menyimpan profil publik: `username`, `email`, `name`, dan `role`.
 - Firestore collection `submissions` menyimpan data pendataan dan hasil QC.
 - Folder lokal [gas](gas) hanya berisi Apps Script penyimpanan dokumen ke Google Drive. Jangan menambahkan login, KoboToolbox, Spreadsheet, QC, atau dashboard ke service tersebut.

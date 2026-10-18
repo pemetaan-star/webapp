@@ -1,4 +1,5 @@
 import { getAdminAuth, getAdminDb, requireAdmin } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 
 const supportedRoles = new Set(["admin", "data analis", "data analyst", "koordinator", "enumerator"]);
 const supportedOrganizations = new Set(["lgi", "igama", "wamarapa", "fatayat_nu"]);
@@ -77,7 +78,14 @@ export async function PATCH(request: Request) {
   const role = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
   const organisasi = typeof body?.organisasi === "string" ? body.organisasi.trim() : "";
   const manualGpsEnabled = body?.manualGpsEnabled === true;
+  const password = typeof body?.password === "string" ? body.password : "";
 
+  if (body?.password !== undefined && typeof body.password !== "string") {
+    return Response.json({ error: "Sandi baru tidak valid." }, { status: 400 });
+  }
+  if (password.length > 0 && password.length < 6) {
+    return Response.json({ error: "Sandi baru minimal 6 karakter." }, { status: 400 });
+  }
   if (body?.manualGpsEnabled !== undefined && typeof body.manualGpsEnabled !== "boolean") {
     return Response.json({ error: "Pengaturan GPS manual tidak valid." }, { status: 400 });
   }
@@ -100,23 +108,40 @@ export async function PATCH(request: Request) {
       if (admins.size < 2) return Response.json({ error: "Admin terakhir tidak dapat diturunkan rolenya." }, { status: 400 });
     }
 
-    const account = await adminAuth.getUser(uid);
-    await adminAuth.updateUser(uid, { email, displayName: nama });
+    await adminAuth.getUser(uid);
+    const profileData = {
+      username,
+      email,
+      nama,
+      role,
+      organisasi: role === "enumerator" ? organisasi : "",
+      manualGpsEnabled: role === "enumerator" && manualGpsEnabled,
+    };
+    await profileRef.update(profileData);
     try {
-      await profileRef.update({
-        username,
-        email,
-        nama,
-        role,
-        organisasi: role === "enumerator" ? organisasi : "",
-        manualGpsEnabled: role === "enumerator" && manualGpsEnabled,
-      });
-    } catch (error) {
       await adminAuth.updateUser(uid, {
-        ...(account.email ? { email: account.email } : {}),
-        displayName: account.displayName || "",
-      }).catch(() => undefined);
-      throw error;
+        email,
+        displayName: nama,
+        ...(password ? { password } : {}),
+      });
+    } catch (authError) {
+      const previousProfile = profileSnapshot.data() || {};
+      const restoredProfile: Record<string, unknown> = {};
+      for (const field of Object.keys(profileData)) {
+        restoredProfile[field] = Object.hasOwn(previousProfile, field)
+          ? previousProfile[field]
+          : FieldValue.delete();
+      }
+      try {
+        await profileRef.update(restoredProfile);
+      } catch (rollbackError) {
+        console.error(
+          "[admin/users] Failed to restore profile after Firebase Auth update failed:",
+          rollbackError instanceof Error ? rollbackError.message : "Unknown rollback error",
+        );
+        return Response.json({ error: "Perubahan akun gagal dan profil tidak dapat dipulihkan otomatis. Hubungi administrator." }, { status: 500 });
+      }
+      throw authError;
     }
 
     return Response.json({ success: true });
@@ -124,6 +149,7 @@ export async function PATCH(request: Request) {
     const code = error instanceof Error && "code" in error ? String(error.code) : "";
     if (code === "auth/user-not-found") return Response.json({ error: "Akun pengguna tidak ditemukan." }, { status: 404 });
     if (code === "auth/email-already-exists") return Response.json({ error: "Email sudah digunakan akun lain." }, { status: 409 });
+    if (code === "auth/invalid-password" || code === "auth/weak-password") return Response.json({ error: "Sandi baru tidak memenuhi persyaratan Firebase." }, { status: 400 });
     return Response.json({ error: "Profil user gagal disimpan." }, { status: 500 });
   }
 }
