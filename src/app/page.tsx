@@ -101,20 +101,12 @@ export default function Home() {
   const isEnumerator = roleKey === "enumerator";
 
   useEffect(() => {
-    if (!authReady || !isLoggedIn || !userProfile || isEnumerator) return;
-    let timer: number | undefined;
-    try {
-      const noticeKey = "lingga-maintenance-notice-2026-11-24";
-      if (window.localStorage.getItem(noticeKey) !== "seen") {
-        timer = window.setTimeout(() => setShowMaintenanceNotice(true), 0);
-      }
-    } catch {
-      timer = window.setTimeout(() => setShowMaintenanceNotice(true), 0);
-    }
+    if (!authReady || !isLoggedIn || !roleKey || isEnumerator) return;
+    const timer = window.setTimeout(() => setShowMaintenanceNotice(true), 0);
     return () => {
-      if (timer !== undefined) window.clearTimeout(timer);
+      window.clearTimeout(timer);
     };
-  }, [authReady, isLoggedIn, isEnumerator, userProfile]);
+  }, [authReady, isLoggedIn, isEnumerator, roleKey]);
   const {
     rows: hotspotRows,
     setRows: setHotspotRows,
@@ -850,14 +842,7 @@ export default function Home() {
       </main>
       <MaintenanceNoticeDialog
         open={showMaintenanceNotice}
-        onClose={() => {
-          try {
-            window.localStorage.setItem("lingga-maintenance-notice-2026-11-24", "seen");
-          } catch {
-            // The notice can still be closed if browser storage is unavailable.
-          }
-          setShowMaintenanceNotice(false);
-        }}
+        onClose={() => setShowMaintenanceNotice(false)}
       />
       <ActionConfirmationDialog
         open={pendingConfirmation !== null}
