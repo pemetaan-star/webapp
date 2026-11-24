@@ -188,8 +188,10 @@ export async function GET(request: Request) {
     let missingHotspotCodeVisits = 0;
     const populationKeys = new Map<string, Record<AnalyticsVisitGroup, PopulationKeyMetrics>>();
     const enumerators = new Map<string, EnumeratorProgressSummary>();
+    const enumeratorHotspotCodes = new Map<string, Set<string>>();
     const summary: DashboardSummary = {
       total: 0,
+      hotspots: 0,
       active: 0,
       pendingQc: 0,
       hivPositive: 0,
@@ -223,6 +225,7 @@ export async function GET(request: Request) {
           name,
           username,
           total: 0,
+          uniqueHotspots: 0,
           qc: { valid: 0, pending: 0, needsRevision: 0 },
           stages: emptyStages(),
         };
@@ -249,6 +252,9 @@ export async function GET(request: Request) {
           : data.visitType === "follow_up" ? 2 : 1;
         const hotspotCode = String(data.kodeHotspot || "").trim().toUpperCase();
         if (hotspotCode) {
+          const hotspotCodes = enumeratorHotspotCodes.get(id) || new Set<string>();
+          hotspotCodes.add(hotspotCode);
+          enumeratorHotspotCodes.set(id, hotspotCodes);
           const visitTimestamp = timestampMillis(data.updatedAt)
             || timestampMillis(data.visitedAt)
             || timestampMillis(data.createdAt);
@@ -289,8 +295,12 @@ export async function GET(request: Request) {
     summary.enumerators = [...enumerators.values()].sort((first, second) =>
       second.total - first.total || first.name.localeCompare(second.name, "id"),
     );
+    summary.enumerators.forEach((enumerator) => {
+      enumerator.uniqueHotspots = enumeratorHotspotCodes.get(enumerator.id)?.size || 0;
+    });
     const hotspotSummary = createMutableHotspotSummary();
     hotspotSummary.total = latestHotspotVisits.size;
+    summary.hotspots = hotspotSummary.total;
     hotspotSummary.missingCodeVisits = missingHotspotCodeVisits;
     latestHotspotVisits.forEach(({ data }) => {
       incrementDistribution(hotspotSummary.hotspotStatuses, data.statusHotspot);

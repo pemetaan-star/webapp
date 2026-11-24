@@ -48,6 +48,30 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.3
+      '@types/caseless':
+        specifier: 0.12.5
+        version: 0.12.5
+      '@types/estree':
+        specifier: 1.0.9
+        version: 1.0.9
+      '@types/geojson':
+        specifier: 7946.0.16
+        version: 7946.0.16
+      '@types/json-schema':
+        specifier: 7.0.15
+        version: 7.0.15
+      '@types/json5':
+        specifier: 0.0.29
+        version: 0.0.29
+      '@types/jsonwebtoken':
+        specifier: 9.0.10
+        version: 9.0.10
+      '@types/long':
+        specifier: 4.0.2
+        version: 4.0.2
+      '@types/ms':
+        specifier: 2.1.0
+        version: 2.1.0
       '@types/node':
         specifier: ^20
         version: 20.19.43
@@ -57,6 +81,12 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.3.0(@types/react@19.3.0)
+      '@types/request':
+        specifier: 2.48.13
+        version: 2.48.13
+      '@types/tough-cookie':
+        specifier: 4.0.5
+        version: 4.0.5
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)
@@ -3702,8 +3732,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@types/caseless@0.12.5':
-    optional: true
+  '@types/caseless@0.12.5': {}
 
   '@types/estree@1.0.9': {}
 
@@ -3722,8 +3751,7 @@ snapshots:
     dependencies:
       '@types/geojson': 7946.0.16
 
-  '@types/long@4.0.2':
-    optional: true
+  '@types/long@4.0.2': {}
 
   '@types/ms@2.1.0': {}
 
@@ -3745,10 +3773,8 @@ snapshots:
       '@types/node': 20.19.43
       '@types/tough-cookie': 4.0.5
       form-data: 2.5.6
-    optional: true
 
-  '@types/tough-cookie@4.0.5':
-    optional: true
+  '@types/tough-cookie@4.0.5': {}
 
   '@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)':
     dependencies:
@@ -4041,8 +4067,7 @@ snapshots:
       retry: 0.13.1
     optional: true
 
-  asynckit@0.4.0:
-    optional: true
+  asynckit@0.4.0: {}
 
   available-typed-arrays@1.0.7:
     dependencies:
@@ -4128,7 +4153,6 @@ snapshots:
   combined-stream@1.0.8:
     dependencies:
       delayed-stream: 1.0.0
-    optional: true
 
   concat-map@0.0.1: {}
 
@@ -4186,8 +4210,7 @@ snapshots:
       has-property-descriptors: 1.0.2
       object-keys: 1.1.1
 
-  delayed-stream@1.0.0:
-    optional: true
+  delayed-stream@1.0.0: {}
 
   detect-libc@2.1.2: {}
 
@@ -4691,7 +4714,6 @@ snapshots:
       hasown: 2.0.4
       mime-types: 2.1.35
       safe-buffer: 5.2.1
-    optional: true
 
   formdata-polyfill@4.0.10:
     dependencies:
@@ -5277,13 +5299,11 @@ snapshots:
       braces: 3.0.3
       picomatch: 2.3.2
 
-  mime-db@1.52.0:
-    optional: true
+  mime-db@1.52.0: {}
 
   mime-types@2.1.35:
     dependencies:
       mime-db: 1.52.0
-    optional: true
 
   mime@3.0.0:
     optional: true

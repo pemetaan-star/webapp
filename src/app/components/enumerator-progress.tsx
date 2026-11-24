@@ -37,9 +37,15 @@ export function EnumeratorProgress({
                   <strong>{enumerator.name}</strong>
                   {enumerator.username && <small>{enumerator.username}</small>}
                 </div>
-                <div className="enumerator-progress-count">
-                  <strong>{enumerator.total}</strong>
-                  <small>data masuk</small>
+                <div className="enumerator-progress-counts" aria-label={`Jumlah data ${enumerator.name}`}>
+                  <div className="enumerator-progress-count">
+                    <strong>{enumerator.uniqueHotspots}</strong>
+                    <small>hotspot unik</small>
+                  </div>
+                  <div className="enumerator-progress-count">
+                    <strong>{enumerator.total}</strong>
+                    <small>kunjungan</small>
+                  </div>
                 </div>
                 <div className="enumerator-progress-review">
                   <div className="enumerator-progress-review-label">
@@ -79,7 +85,7 @@ export function EnumeratorProgress({
       )}
       {summary && (
         <div className="enumerator-progress-footer">
-          <span>Rekap seluruh {summary.total} data.</span>
+          <span>Rekap seluruh {summary.hotspots} hotspot unik dan {summary.total} kunjungan.</span>
           {loading && <span role="status">Memperbarui...</span>}
           <button type="button" className="button button-secondary" onClick={onRefresh} disabled={loading}>
             {loading ? "Memperbarui..." : "Perbarui ringkasan"}

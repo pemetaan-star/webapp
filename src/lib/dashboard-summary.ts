@@ -50,6 +50,7 @@ export type EnumeratorProgressSummary = {
   name: string;
   username: string;
   total: number;
+  uniqueHotspots: number;
   qc: {
     valid: number;
     pending: number;
@@ -109,6 +110,7 @@ export type DashboardAnalyticsSummary = {
 
 export type DashboardSummary = {
   total: number;
+  hotspots: number;
   active: number;
   pendingQc: number;
   hivPositive: number;

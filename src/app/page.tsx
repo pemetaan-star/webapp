@@ -12,6 +12,7 @@ import { DashboardLoading } from "@/app/components/dashboard-loading";
 import { LoginScreen } from "@/app/components/login-screen";
 import { SubmissionTable } from "@/app/components/submission-table";
 import { ActionConfirmationDialog } from "@/app/components/action-confirmation-dialog";
+import { MaintenanceNoticeDialog } from "@/app/components/maintenance-notice-dialog";
 import { ReviewDetailModal, ReviewQcModal, type AiQcSuggestion } from "@/app/components/review-modals";
 import { mapSubmissionSnapshot } from "@/app/components/dashboard-data-mappers";
 import type { Hotspot, UserProfile } from "@/app/components/dashboard-types";
@@ -72,6 +73,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("baru saja");
   const [showUserManagement, setShowUserManagement] = useState(false);
+  const [showMaintenanceNotice, setShowMaintenanceNotice] = useState(false);
   const [managedUsers, setManagedUsers] = useState<UserProfile[]>([]);
   const [userManagementLoading, setUserManagementLoading] = useState(false);
   const [userManagementError, setUserManagementError] = useState("");
@@ -97,6 +99,22 @@ export default function Home() {
   const qcUploadKeys = useRef<Record<string, string>>({});
   const roleKey = normalizeRole(userProfile?.role);
   const isEnumerator = roleKey === "enumerator";
+
+  useEffect(() => {
+    if (!authReady || !isLoggedIn || !userProfile || isEnumerator) return;
+    let timer: number | undefined;
+    try {
+      const noticeKey = "lingga-maintenance-notice-2026-11-24";
+      if (window.localStorage.getItem(noticeKey) !== "seen") {
+        timer = window.setTimeout(() => setShowMaintenanceNotice(true), 0);
+      }
+    } catch {
+      timer = window.setTimeout(() => setShowMaintenanceNotice(true), 0);
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [authReady, isLoggedIn, isEnumerator, userProfile]);
   const {
     rows: hotspotRows,
     setRows: setHotspotRows,
@@ -830,6 +848,17 @@ export default function Home() {
           ) : null}
         </div>
       </main>
+      <MaintenanceNoticeDialog
+        open={showMaintenanceNotice}
+        onClose={() => {
+          try {
+            window.localStorage.setItem("lingga-maintenance-notice-2026-11-24", "seen");
+          } catch {
+            // The notice can still be closed if browser storage is unavailable.
+          }
+          setShowMaintenanceNotice(false);
+        }}
+      />
       <ActionConfirmationDialog
         open={pendingConfirmation !== null}
         title={confirmationDetails?.title || ""}
