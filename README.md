@@ -159,3 +159,62 @@ service cloud.firestore {
 Rules di atas membuat profil `user` dapat dibaca sebelum login karena login memakai username. Pastikan dokumen user hanya berisi data profil publik seperti `username`, `email`, `name`, dan `role`.
 
 Setelah mengubah [gas/code.gs](gas/code.gs), deploy ulang Apps Script Web App. Upload dokumen sekarang membutuhkan `idempotencyKey` dan akan mengembalikan file Drive yang sama saat request diulang.
+
+## Yang Perlu Ditangani
+
+Daftar ini adalah backlog, bukan klaim bahwa setiap poin merupakan bug yang sedang terjadi. Jumlah baris dapat berubah seiring perubahan kode.
+
+### 1. Akses baca collection `user`
+
+`firestore.rules` saat ini mengizinkan `allow read: if true` pada collection `user`, sehingga profil dapat dibaca tanpa autentikasi. Jangan sekadar mengganti aturan menjadi `signedIn()`: login username saat ini mencari profil di Firestore sebelum autentikasi. Pindahkan resolusi username ke alur server-side yang tidak membuka daftar profil, lalu batasi akses baca client sesuai kebutuhan. Perubahan ini harus mempertahankan login username dan menghindari kebocoran informasi akun.
+
+### 2. Memecah komponen halaman utama
+
+`src/app/page.tsx` berisi 2.526 baris pada revisi saat dokumentasi ini diperiksa, termasuk banyak state, data fetching, dan UI untuk beberapa peran. Ukuran dan tanggung jawab file menyulitkan pemeliharaan; dampak performanya perlu diukur, bukan diasumsikan. Pecah komponen berdasarkan fitur dan tanggung jawab, lalu pertimbangkan route terpisah jika memang dibutuhkan navigasi atau deep link.
+
+### 3. Routing UI
+
+UI utama saat ini disajikan dari route `/`; aplikasi juga memiliki route API. Karena bagian dashboard tidak memiliki URL tersendiri, halaman atau submission tertentu belum dapat dibuka melalui deep link. Tambahkan route UI hanya untuk tampilan yang perlu dibookmark, dibagikan, atau dinavigasi dengan tombol Back/Forward browser. Contoh target:
+
+```text
+/login
+/dashboard
+/submissions
+/submissions/[id]
+/supervision
+/admin/users
+/analytics
+```
+
+### 4. State management
+
+Banyak state berada di komponen halaman utama. Ekstrak komponen dan letakkan state sedekat mungkin dengan fitur yang menggunakannya. Gunakan Context atau reducer hanya untuk state yang memang dibagi lintas fitur; pertahankan listener Firestore realtime yang sudah ada kecuali ada alasan terukur untuk menggantinya.
+
+### 5. CSS global
+
+`src/app/globals.css` berisi 664 baris. Tailwind diimpor, tetapi sebagian besar tampilan menggunakan selector CSS khusus; beberapa selector, termasuk `.login-form`, memiliki override berulang. Pecah CSS secara bertahap ke CSS Modules atau konsolidasikan aturan yang tumpang tindih. Migrasi penuh ke Tailwind bukan keharusan.
+
+### 6. Pembacaan profil fallback saat memuat submission
+
+`mapSubmissionSnapshot` membaca profil Firestore untuk setiap submission yang tidak memiliki `enumeratorName`. Submission baru sudah menyimpan nama tersebut, sehingga tambahan pembacaan terutama berdampak pada data lama yang belum lengkap. Pertimbangkan melengkapi data lama atau membaca setiap UID unik paling banyak sekali per batch.
+
+### 7. Testing
+
+Belum ada file test/spec yang ter-tracking di repository. Mulai dengan pengujian transisi workflow dan Firestore Rules, lalu tambahkan pengujian route API untuk perilaku penting.
+
+### 8. Duplikasi label workflow
+
+`workflowStageLabels` didefinisikan di `src/app/page.tsx` dan `src/app/components/review-modals.tsx`. Pindahkan label dan helper workflow bersama ke modul bersama yang sesuai.
+
+### 9. Validasi dengan Zod
+
+Zod sudah digunakan di route review AI, tetapi penggunaannya belum menjadi validasi umum untuk request API atau data eksternal. Pertimbangkan schema Zod pada batas input API yang menerima data tidak tepercaya; validasi data Firestore sesuai kebutuhan dan jangan menganggap hasil casting sudah tervalidasi.
+
+### Urutan pengerjaan yang disarankan
+
+1. Rancang resolusi username server-side dan batasi akses baca collection `user`; pastikan login tetap berfungsi.
+2. Tambahkan pengujian untuk aturan akses, login, dan transisi workflow sebelum mengubah batas akses.
+3. Kurangi pembacaan profil fallback untuk submission lama.
+4. Pecah `page.tsx` per fitur; tambahkan route UI jika kebutuhan deep link sudah jelas.
+5. Konsolidasikan CSS dan pindahkan label workflow ke modul bersama.
+6. Tambahkan validasi schema pada request API yang sesuai.

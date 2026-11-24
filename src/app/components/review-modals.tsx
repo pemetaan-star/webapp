@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { createPortal } from "react-dom";
 import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { getWorkflowStageLabel } from "@/lib/dashboard-summary";
 
 type ReviewHotspot = {
   id: string;
@@ -80,15 +81,6 @@ export type AiQcSuggestion = {
   }>;
 };
 
-const workflowStageLabels: Record<string, string> = {
-  submitted: "Menunggu supervisi Koordinator",
-  coordinator_review: "Supervisi Koordinator",
-  awaiting_enumerator_signature: "Menunggu tanda tangan Enumerator",
-  awaiting_coordinator_completion: "Menunggu penyelesaian Koordinator",
-  analyst_review: "Pemeriksaan data analis",
-  finalized: "Database final",
-  needs_revision: "Perlu perbaikan",
-};
 const suggestionResultLabels: Record<AiQcSuggestion["pemeriksaanSop"][number]["hasil"], string> = {
   sesuai: "Sesuai",
   perlu_perbaikan: "Perlu perbaikan",
@@ -177,7 +169,7 @@ function WorkflowTimeline({ hotspot }: { hotspot: ReviewHotspot }) {
       return <li key={`${event.at}-${event.uid}-${index}`}>
         <span className="workflow-timeline-marker" aria-hidden="true" />
         <div className="workflow-timeline-content">
-          <strong>{workflowStageLabels[event.stage] || formatStoredLabel(event.stage)}</strong>
+          <strong>{getWorkflowStageLabel(event.stage) || formatStoredLabel(event.stage)}</strong>
           <small>{Number.isFinite(time) ? new Date(time).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "Waktu tidak tercatat"} · {actor}</small>
           {event.note && <p>{event.note}</p>}
         </div>
@@ -194,7 +186,7 @@ function displayLocation(value?: string, labels: Record<string, string> = {}) {
 
 function displayReviewValue(label: string, value?: string) {
   if (!value) return value;
-  if (label === "Tahapan proses") return workflowStageLabels[value] || formatStoredLabel(value);
+  if (label === "Tahapan proses") return getWorkflowStageLabel(value) || formatStoredLabel(value);
   if (label === "Status pemeriksaan" && value === "Pending") return "Menunggu";
   if (label === "Kelengkapan") return value === "lengkap" ? "Lengkap" : value === "perlu_perbaikan" ? "Perlu perbaikan" : formatStoredLabel(value);
   if (label === "Duplikasi") return value === "tidak_ada" ? "Tidak ditemukan" : value === "ada" ? "Terindikasi" : formatStoredLabel(value);

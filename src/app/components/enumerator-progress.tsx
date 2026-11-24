@@ -1,17 +1,7 @@
 "use client";
 
 import { PanelHeading } from "@/app/components/dashboard";
-import { workflowStages, type DashboardSummary, type WorkflowStage } from "@/lib/dashboard-summary";
-
-const stageLabels: Record<WorkflowStage, string> = {
-  submitted: "Menunggu Koordinator",
-  coordinator_review: "Supervisi Koordinator",
-  awaiting_enumerator_signature: "Menunggu tanda tangan Anda",
-  awaiting_coordinator_completion: "Menunggu Koordinator menyelesaikan",
-  analyst_review: "Data Analis",
-  finalized: "Database final",
-  needs_revision: "Perlu perbaikan",
-};
+import { workflowStageLabels, workflowStages, type DashboardSummary } from "@/lib/dashboard-summary";
 
 export function EnumeratorProgress({
   summary,
@@ -27,7 +17,7 @@ export function EnumeratorProgress({
   return (
     <section className="panel enumerator-progress" aria-label="Progres enumerator">
       <PanelHeading
-        icon="↗"
+        icon="chart"
         title="Progres Enumerator"
         subtitle="Rekap seluruh data yang masuk, hasil QC, dan tahapan workflow. Tidak menggunakan target per enumerator."
       />
@@ -75,7 +65,7 @@ export function EnumeratorProgress({
                     <summary>Rincian tahapan workflow</summary>
                     <div className="enumerator-progress-stages" aria-label={`Tahapan workflow ${enumerator.name}`}>
                       {workflowStages.map((stage) => (
-                        <span key={stage}>{stageLabels[stage]} <strong>{enumerator.stages[stage]}</strong></span>
+                        <span key={stage}>{workflowStageLabels[stage]} <strong>{enumerator.stages[stage]}</strong></span>
                       ))}
                     </div>
                   </details>

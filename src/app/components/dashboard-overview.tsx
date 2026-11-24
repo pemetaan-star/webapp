@@ -13,15 +13,33 @@ type OverviewRow = {
   coordinates?: string;
 };
 
-export function DashboardOverview({ rows, totalRows = rows.length }: { rows: OverviewRow[]; totalRows?: number }) {
+function markerShape(isNewHotspot: boolean) {
+  return isNewHotspot
+    ? `<path d="m15 9.1 1.65 3.35 3.7.54-2.67 2.6.63 3.68L15 17.53l-3.31 1.74.63-3.68-2.67-2.6 3.7-.54L15 9.1Z" fill="#fff"/>`
+    : `<circle cx="15" cy="14.5" r="4.5" fill="#fff" fill-opacity=".95"/>`;
+}
+
+function MapMarkerSymbol({ isNewHotspot }: { isNewHotspot: boolean }) {
+  return <svg className={isNewHotspot ? "map-marker-symbol map-marker-new" : "map-marker-symbol map-marker-existing"} viewBox="0 0 30 38" aria-hidden="true">
+    <path className="map-marker-pin" d="M15 1.5C7.82 1.5 2 7.32 2 14.5c0 9.1 13 22 13 22s13-12.9 13-22c0-7.18-5.82-13-13-13Z" />
+    {isNewHotspot ? <path className="map-marker-center" d="m15 7.5 2.2 4.45 4.9.71-3.55 3.46.84 4.88L15 18.7l-4.39 2.3.84-4.88-3.55-3.46 4.9-.71L15 7.5Z" /> : <circle className="map-marker-center" cx="15" cy="14.5" r="4.5" />}
+  </svg>;
+}
+
+export function DashboardOverview({ rows }: { rows: OverviewRow[] }) {
   const coordinateCount = rows.filter((row) => {
     const [latitude, longitude] = (row.coordinates || "").split(/[\s,]+/).map(Number);
     return Number.isFinite(latitude) && Number.isFinite(longitude);
   }).length;
 
-  const loadedScope = totalRows > rows.length ? `${rows.length} dari ${totalRows} data termuat` : `${rows.length} data`;
-
-  return <section className="real-overview" aria-label="Peta sebaran hotspot"><article className="panel map-panel"><PanelHeading icon="⌖" title="Peta Persebaran Hotspot" subtitle={`${coordinateCount} memiliki koordinat · ${loadedScope}`} tag="DATA LAPANGAN" /><div className="hotspot-map-legend" aria-label="Legenda peta"><span><i className="map-marker-swatch map-marker-new" />Hotspot baru</span><span><i className="map-marker-swatch map-marker-existing" />Hotspot lama</span></div><RealLeafletMap rows={rows} /></article></section>;
+  return <section className="real-overview" aria-label="Peta sebaran hotspot"><article className="panel map-panel">
+    <PanelHeading icon="map" title="Peta Persebaran Hotspot" subtitle={`Peta menampilkan ${rows.length} catatan yang dimuat; ${coordinateCount} memiliki koordinat. Daftar teks tersedia sebagai alternatif.`} tag="DATA LAPANGAN" />
+    <div className="hotspot-map-legend" aria-label="Legenda peta">
+      <span><MapMarkerSymbol isNewHotspot />Hotspot baru (bintang)</span>
+      <span><MapMarkerSymbol isNewHotspot={false} />Hotspot lama (titik)</span>
+    </div>
+    <RealLeafletMap rows={rows} />
+  </article></section>;
 }
 
 function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
@@ -83,7 +101,7 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
           const gradientId = `hotspot-pin-gradient-${index}`;
           const icon = leaflet.divIcon({
             className: "hotspot-marker-icon",
-            html: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="29" viewBox="0 0 30 38" aria-hidden="true"><defs><linearGradient id="${gradientId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${color}"/><stop offset=".58" stop-color="${color}"/><stop offset="1" stop-color="${shadowColor}"/></linearGradient></defs><path d="M15 1.5C7.82 1.5 2 7.32 2 14.5c0 9.1 13 22 13 22s13-12.9 13-22c0-7.18-5.82-13-13-13Z" fill="url(#${gradientId})" stroke="#fff" stroke-width="2"/><path d="M8 8.5c1.8-2.6 4.3-3.8 7-3.8" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".65" stroke-width="2"/><circle cx="15" cy="14.5" r="4.5" fill="#fff" fill-opacity=".95"/></svg>`,
+            html: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="29" viewBox="0 0 30 38" aria-hidden="true"><defs><linearGradient id="${gradientId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${color}"/><stop offset=".58" stop-color="${color}"/><stop offset="1" stop-color="${shadowColor}"/></linearGradient></defs><path d="M15 1.5C7.82 1.5 2 7.32 2 14.5c0 9.1 13 22 13 22s13-12.9 13-22c0-7.18-5.82-13-13-13Z" fill="url(#${gradientId})" stroke="#fff" stroke-width="2"/><path d="M8 8.5c1.8-2.6 4.3-3.8 7-3.8" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".65" stroke-width="2"/>${markerShape(isNewHotspot)}</svg>`,
             iconSize: [22, 29],
             iconAnchor: [11, 28],
             popupAnchor: [0, -26],
@@ -99,5 +117,14 @@ function RealLeafletMap({ rows }: { rows: OverviewRow[] }) {
     return () => { active = false; };
   }, [points]);
 
-  return <div className="leaflet-map-wrap"><div ref={mapRef} className="leaflet-map" />{points.length === 0 && <div className="real-empty">Belum ada koordinat GPS pada data.</div>}</div>;
+  return <>
+    <div className="leaflet-map-wrap"><div ref={mapRef} className="leaflet-map" />{points.length === 0 && <div className="real-empty">Belum ada koordinat GPS pada data.</div>}</div>
+    <details className="map-text-alternative">
+      <summary>Daftar teks lokasi pada peta ({points.length})</summary>
+      {points.length > 0 ? <ul>{points.map(({ row }) => <li key={row.id}>
+        <strong>{row.name}</strong>
+        <span>{row.area} · {row.status === "Baru" ? "Hotspot baru" : "Hotspot lama"} · {row.qc} · Koordinat {row.coordinates}</span>
+      </li>)}</ul> : <p>Belum ada lokasi berkoordinat untuk ditampilkan.</p>}
+    </details>
+  </>;
 }

@@ -57,7 +57,7 @@ service cloud.firestore {
         && validManualGps(data)
         && data.statusHotspot in ['aktif', 'baru', 'tidak_aktif', 'perlu_verifikasi']
         && data.statusVerifikasi is string
-        && data.populasiKunci is list
+        && data.populasiKunci is list && data.populasiKunci.size() > 0
         && data.tipeLokasi is string && data.subTipeLokasi is string
         && data.waktuAktivitas is list
         && validCounts(data)
@@ -91,6 +91,7 @@ service cloud.firestore {
         && data.namaHotspot is string && data.namaHotspot.size() > 0
         && data.organisasi in ['lgi', 'igama', 'wamarapa', 'fatayat_nu']
         && data.statusHotspot in ['aktif', 'baru', 'tidak_aktif', 'perlu_verifikasi']
+        && data.populasiKunci is list && data.populasiKunci.size() > 0
         && data.qcStatus == 'pending'
         && data.workflowStage == 'submitted'
         && validCoordinates(data.koordinat)

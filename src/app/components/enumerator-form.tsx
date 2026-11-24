@@ -1,5 +1,8 @@
 import type { User } from "firebase/auth";
 import type { FormEvent } from "react";
+import { normalizeOrganization, organizationOptions } from "@/lib/organizations";
+
+export { normalizeOrganization, organizationOptions } from "@/lib/organizations";
 
 type EnumeratorFormFieldsProps = {
   user: User;
@@ -56,23 +59,6 @@ type EnumeratorFormFieldsProps = {
   } | null;
 };
 
-const organizations = [
-  ["lgi", "Yayasan Lingkar Gagasan Indonesia (LGI)"],
-  ["igama", "Yayasan IGAMA"],
-  ["wamarapa", "Wamarapa"],
-  ["fatayat_nu", "SSR Fatayat NU Jawa Timur (PENASUN)"],
-];
-export const organizationOptions = organizations;
-
-export function normalizeOrganization(value?: string) {
-  const normalized = (value || "").toLowerCase();
-  if (normalized.includes("igama")) return "igama";
-  if (normalized.includes("wamarapa")) return "wamarapa";
-  if (normalized.includes("fatayat") || normalized.includes("penasun")) return "fatayat_nu";
-  if (normalized.includes("lgi") || normalized.includes("lingkar gagasan")) return "lgi";
-  return "";
-}
-
 export function EnumeratorFormFields({ user, profile, error, saving, gps, manualGps, onChangeGps, onManualGpsChange, onUseCurrentLocation, onClose, onSubmit, locationType, setLocationType, locationSubtype, setLocationSubtype, statusHotspot, setStatusHotspot, hotspotCode, hotspotCodeLoading, hotspotName, setHotspotName, district, setDistrict, village, setVillage, address, setAddress, districts, visitMode, setVisitMode, previousHotspotId, setPreviousHotspotId, previousHotspots, previousVisitsLoading, onSelectPreviousHotspot, locationSubtypes, revision }: EnumeratorFormFieldsProps) {
   const availableSubtypes = locationSubtypes[locationType] || [];
   const gpsParts = gps.split(",");
@@ -85,7 +71,7 @@ export function EnumeratorFormFields({ user, profile, error, saving, gps, manual
   const revisionNote = analystRevision ? revision?.qcNote : revision?.coordinatorReviewNote;
   const revisionReviewer = analystRevision ? "Data Analis" : "Koordinator";
   const organizationValue = normalizeOrganization(profile?.organisasi);
-  const organizationLabel = organizations.find(([value]) => value === organizationValue)?.[1] || "Organisasi belum diatur";
+  const organizationLabel = organizationOptions.find(([value]) => value === organizationValue)?.[1] || "Organisasi belum diatur";
   const requiredLabel = (text: string) => (
     <span className="required-label">
       <span>{text}</span>
